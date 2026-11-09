@@ -51,7 +51,7 @@
     return d;
   }
 
-  var LIST = [];
+  var LIST = [], COURSE = [];
   function add(s) { LIST.push(s); }
 
   /* ═══ blank ═══ */
@@ -651,10 +651,10 @@
   /* ════════════════════════════════════════════════════════════════════
      BoxOffice (2027.1): the course's system, chapter by chapter and lab by
      lab, with the names and numbers of the class pages and of the lab code
-     (docs/2027.1/hands-on/<n>/code/). group "boxoffice" puts them together
-     in the scenario menu.
+     (docs/2027.1/hands-on/<n>/code/). These presets support embedded course
+     exercises only; they are not part of the app's scenario menu.
      ════════════════════════════════════════════════════════════════════ */
-  function BO(s) { s.group = "boxoffice"; add(s); }
+  function BO(s) { s.group = "boxoffice"; s.courseOnly = true; COURSE.push(s); }
   function CASE(s) { s.group = "case"; add(s); }
 
   /* ═══ boxoffice-onsale (class 2, estimation) ═══ */
@@ -1303,10 +1303,11 @@
     .forEach(function (id) { LIST.forEach(function (s) { if (s.id === id) s.group = "case"; }); });
 
   var BY_ID = {};
-  LIST.forEach(function (s) { BY_ID[s.id] = s; });
+  var ALL = LIST.concat(COURSE);
+  ALL.forEach(function (s) { BY_ID[s.id] = s; });
 
   return {
-    LIST: LIST, BY_ID: BY_ID,
+    LIST: LIST, COURSE: COURSE, ALL: ALL, BY_ID: BY_ID,
     get: function (id) { return BY_ID[id] || null; },
     ids: function () { return LIST.map(function (s) { return s.id; }); },
     clone: clone

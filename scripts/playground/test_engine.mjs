@@ -641,7 +641,7 @@ test("distributed-cache: 17 nodes give 1.36 M ops/s for 2 M; the database takes 
 
 console.log("scenarios");
 const goalsOK = [];
-SC.LIST.forEach((sc) => {
+SC.ALL.forEach((sc) => {
   test(`${sc.id}: loads and runs 60 s without exceptions or NaN`, () => {
     [sc.design, sc.solution].filter(Boolean).forEach((d) => {
       const sim = runFor(E.create(d, { ...sc.settings, chaos: "high" }, { scenario: sc }), 60);
@@ -675,10 +675,17 @@ test("all scenario ids of the course are implemented", () => {
     "boxoffice-outbox", "boxoffice-tickets-pdf", "boxoffice-observability", "boxoffice-payment", "boxoffice-hpa", "boxoffice-canary",
     "boxoffice-assistant", "boxoffice-shared-llm", "ticketing", "distributed-cache"];
   ids.forEach((id) => assert(SC.get(id), "missing " + id));
-  SC.LIST.forEach((s) => assert(s.title.en && s.title.pt && s.brief.en && s.brief.pt, s.id + " texts"));
-  SC.LIST.forEach((s) => assert(/^boxoffice-/.test(s.id) === (s.group === "boxoffice"), s.id + ": group " + s.group));
+  SC.ALL.forEach((s) => assert(s.title.en && s.title.pt && s.brief.en && s.brief.pt, s.id + " texts"));
+  SC.ALL.forEach((s) => assert(/^boxoffice-/.test(s.id) === (s.group === "boxoffice"), s.id + ": group " + s.group));
   ["ticketing", "distributed-cache", "url-shortener", "news-feed", "chat", "ride-sharing", "video-streaming", "notification-system", "payment-system", "search-autocomplete"]
     .forEach((id) => assert(SC.get(id).group === "case", id + " is not in the case-study group"));
+});
+
+test("course presets stay out of the app menu but remain available to embedded labs", () => {
+  assert(SC.COURSE.length === 14, "expected fourteen course-only presets");
+  assert(SC.LIST.every(s => !s.courseOnly && !s.id.startsWith("boxoffice-")), "course scenario in app menu");
+  assert(SC.ids().every(id => !id.startsWith("boxoffice-")), "course scenario in public app ids");
+  SC.COURSE.forEach(s => assert(SC.get(s.id) === s && s.courseOnly, s.id + " cannot be loaded by its course page"));
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

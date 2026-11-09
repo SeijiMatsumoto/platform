@@ -10,7 +10,7 @@ Desenhe um sistema com os componentes da disciplina, coloque-o sob carga e **vej
 
 <div class="sdp" data-scenario="monolith" data-mode="full" data-height="640"></div>
 
-Escolha um cenário na barra (ou **Tela em branco**), aperte ▶ e leia os painéis abaixo da tela. O menu agrupa os cenários: blocos de construção, [BoxOffice](scenarios/index.md#boxoffice) (o sistema das aulas e dos labs de 2027.1, com seus números) e estudos de caso; o [guia de cenários](scenarios/index.md) explica o que cada um ensina. Seu projeto, configurações de carga e duas últimas execuções concluídas ficam salvos neste navegador por cenário; **Restaurar o cenário** limpa esse estado salvo e traz o original de volta.
+Escolha um cenário na barra (ou **Tela em branco**), aperte ▶ e leia os painéis abaixo da tela. O menu agrupa os cenários: blocos de construção, sistemas de IA e estudos de caso; o [guia de cenários](scenarios/index.md) explica o que cada um ensina. Seu projeto, configurações de carga e duas últimas execuções concluídas ficam salvos neste navegador por cenário; **Restaurar o cenário** limpa esse estado salvo e traz o original de volta.
 
 O cenário selecionado fica na URL, por exemplo `?scenario=ai-faq`. Copie o endereço para abrir o mesmo cenário em outro lugar; recarregar e Voltar/Avançar preservam a seleção. Use **Copiar link de compartilhamento** para incluir também o projeto editado e as configurações.
 

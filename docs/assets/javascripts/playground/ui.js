@@ -26,7 +26,7 @@
   /* ─── Interface strings ─── */
   var STR = {
     en: {
-      scenario: "Scenario", grpAI: "AI systems", grpGeneral: "Building blocks", grpBoxoffice: "BoxOffice (classes and labs)", grpCase: "Case studies", profile: "Load profile", target: "Target RPS", read: "Read %", seed: "Seed", newSeed: "New random seed",
+      scenario: "Scenario", grpAI: "AI systems", grpGeneral: "Building blocks", grpCase: "Case studies", profile: "Load profile", target: "Target RPS", read: "Read %", seed: "Seed", newSeed: "New random seed",
       chaos: "Chaos", play: "Run (space)", pause: "Pause (space)", step: "Advance 1 s", reset: "Restart the run", speed: "Speed",
       exportJson: "Export the design (JSON)", importJson: "Import a design (JSON)", share: "Copy a share link", mermaid: "Copy as Mermaid flowchart",
       fullscreen: "Full screen", inject: "Inject an event", god: "God mode: show what is not measured", help: "Keyboard shortcuts (?)",
@@ -61,7 +61,7 @@
       lostK: "Lost writes", failoverK: "Failover", promoted: "promoted, one node fewer", noPrimary: "no primary", writeExtra: "Write ack wait", p99w: "p99 (writes)"
     },
     pt: {
-      scenario: "Cenário", grpAI: "Sistemas de IA", grpGeneral: "Blocos de construção", grpBoxoffice: "BoxOffice (aulas e labs)", grpCase: "Estudos de caso", profile: "Perfil de carga", target: "RPS-alvo", read: "% leituras", seed: "Semente", newSeed: "Nova semente aleatória",
+      scenario: "Cenário", grpAI: "Sistemas de IA", grpGeneral: "Blocos de construção", grpCase: "Estudos de caso", profile: "Perfil de carga", target: "RPS-alvo", read: "% leituras", seed: "Semente", newSeed: "Nova semente aleatória",
       chaos: "Caos", play: "Executar (espaço)", pause: "Pausar (espaço)", step: "Avançar 1 s", reset: "Recomeçar a execução", speed: "Velocidade",
       exportJson: "Exportar o projeto (JSON)", importJson: "Importar um projeto (JSON)", share: "Copiar link de compartilhamento", mermaid: "Copiar como fluxograma Mermaid",
       fullscreen: "Tela cheia", inject: "Injetar um evento", god: "Modo deus: mostra o que não é medido", help: "Atalhos de teclado (?)",
@@ -565,14 +565,15 @@
     if (this.full) {
       var g0 = group("sdp-g-scn");
       var sel = el("select", { class: "sdp-scn", "aria-label": t("scenario") });
-      /* grouped menu: generic scenarios, then BoxOffice (group "boxoffice"), then the case studies */
-      var groups = { general: null, ai: null, boxoffice: null, "case": null }, gkey = { general: "grpGeneral", ai: "grpAI", boxoffice: "grpBoxoffice", "case": "grpCase" };
-      SCN.LIST.forEach(function (sc) {
+      /* App scenarios only. A directly opened course exercise remains editable. */
+      var groups = { general: null, ai: null, "case": null }, gkey = { general: "grpGeneral", ai: "grpAI", "case": "grpCase" };
+      var choices = self.scenario.courseOnly ? [self.scenario].concat(SCN.LIST) : SCN.LIST;
+      choices.forEach(function (sc) {
         var g = groups.hasOwnProperty(sc.group) ? sc.group : "general";
         if (!groups[g]) groups[g] = el("optgroup", { label: t(gkey[g]) });
         var o = el("option", { value: sc.id, text: tx(sc.title) }); if (sc.id === self.scenario.id) o.selected = true; groups[g].appendChild(o);
       });
-      ["general", "ai", "boxoffice", "case"].forEach(function (g) { if (groups[g]) sel.appendChild(groups[g]); });
+      ["general", "ai", "case"].forEach(function (g) { if (groups[g]) sel.appendChild(groups[g]); });
       sel.addEventListener("change", function () { self.switchScenario(sel.value); });
       g0.appendChild(labelled(t("scenario"), sel));
     }

@@ -10,7 +10,7 @@ Draw a system with the components of the course, put it under load, and **watch 
 
 <div class="sdp" data-scenario="monolith" data-mode="full" data-height="640"></div>
 
-Pick a scenario in the toolbar (or **Blank canvas**), press ▶ and read the panels below the canvas. The menu groups the scenarios: building blocks, [BoxOffice](scenarios/index.md#boxoffice) (the system of the 2027.1 classes and labs, with their numbers) and case studies; the [scenario guide](scenarios/index.md) explains what each one teaches. Your design, load settings, and two latest completed runs are saved in this browser for each scenario; **Reset scenario** clears that saved workspace and brings the original back.
+Pick a scenario in the toolbar (or **Blank canvas**), press ▶ and read the panels below the canvas. The menu groups the scenarios: building blocks, AI systems, and case studies; the [scenario guide](scenarios/index.md) explains what each one teaches. Your design, load settings, and two latest completed runs are saved in this browser for each scenario; **Reset scenario** clears that saved workspace and brings the original back.
 
 The selected scenario is stored in the URL, for example `?scenario=ai-faq`. Copy the address to open the same scenario elsewhere; reload and Back/Forward preserve the selection. Use **Copy a share link** to include your edited design and settings as well.
 
