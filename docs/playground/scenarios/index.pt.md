@@ -47,6 +47,14 @@ Cada cenário do [System Design Playground](../index.md) é um pequeno laborató
 | [Failover do banco: RTO e RPO](#db-failover) | Um failover custa o tempo sem primário (RTO) e as escritas ainda não replicadas (RPO) |
 | [Venda de ingressos: 2 M de fãs, 60 mil assentos](#ticketing) | Consultas na borda, entradas numa sala de espera, compradores admitidos a ≈ 33/s |
 | [Cache distribuído: memória ou vazão?](#distributed-cache) | Dimensione um cache por memória e por vazão; a taxa de acerto dimensiona o banco |
+| [Sincronização de arquivos: tire os bytes dos seus servidores](#file-sync) | Uploads grandes vão direto para o object storage com URLs pré-assinadas; a API só cuida dos metadados |
+| [Busca por proximidade: estabelecimentos perto de mim](#proximity-search) | "Perto de mim" é uma busca num índice geoespacial (células geohash), com as células populares em cache |
+| [Juiz online: o contest começa](#code-judge) | Trabalho lento e não confiável roda a partir de uma fila; a API responde "pendente" e o atraso da fila é a espera pelo veredito |
+| [Leilão online: o último minuto](#online-auction) | Observadores leem o preço em cache; lances vão para um log ordenado particionado por leilão |
+| [Agregador de cliques: conte, não armazene](#ad-click-aggregator) | Eventos em alta taxa são agregados num stream; painéis leem as contagens, não os eventos brutos |
+| [Crawler: sites lentos prendem os fetchers](#web-crawler) | Workers limitados por I/O são dimensionados por threads ÷ latência; timeouts limitam o que um site lento consome |
+| [Busca de posts: indexe de forma assíncrona](#post-search) | A indexação sai do caminho de escrita por um log e indexadores em lote; consultas repetidas vão para cache |
+| [Comentários ao vivo: um milhão de espectadores consultando](#live-comments) | Consultas idênticas são respondidas na borda; comentários novos são empurrados via pub/sub |
 | [Resumo com IA: o prompt é grande demais](#ai-summarizer) | Cada chamada exige tokens do trecho + saída reservada <= limite de contexto. Observe chamadas agregadas e a cota. |
 | [Assistente FAQ: pare de enviar o manual inteiro](#ai-faq) | Recall e suporte das citações são verificações distintas. Poucas seções perdem fatos; recuperar tudo desperdiça tokens. |
 | [Assistente de pedidos: use uma ferramenta para fatos atuais](#ai-order-status) | Só resultados válidos podem virar respostas sobre estado. Limite tentativas e informe indisponibilidade. |
@@ -571,7 +579,7 @@ Checkout da venda relâmpago: 1 500 req/s, metade escritas (pedidos), num DB Clu
 
 ## Mais estudos de caso { #more-case-studies }
 
-Dois estudos de caso do curso que não têm um cenário genérico acima.
+Dois estudos de caso do curso que não têm um cenário genérico acima e, depois, problemas clássicos de entrevista, cada um reduzido à ideia pela qual é conhecido.
 
 ## Venda de ingressos: 2 M de fãs, 60 mil assentos { #ticketing }
 
@@ -610,6 +618,158 @@ O estudo de caso: 1 bilhão de itens de 1 KB, 2 milhões de leituras/s, 95% de a
     1. Quantos nós são necessários por memória e por vazão e por que o caso termina com 50?
     2. Perder 1 de 25 nós acrescenta ≈ 80 000 misses/s: o banco aguenta?
     3. Por que o hashing consistente importa quando um nó entra ou sai?
+
+## Sincronização de arquivos: tire os bytes dos seus servidores { #file-sync }
+
+Clientes desktop sincronizam pastas: 1 000 req/s, 80% perguntam "o que mudou?" (uma leitura de metadados), 20% enviam um bloco de 4 MB. Hoje cada bloco passa pela API de sincronização a caminho do object storage: cada upload prende uma thread da API por ≈ 400 ms, e as consultas de metadados esperam atrás deles. Deixe os clientes mandarem os bytes direto para o storage.
+
+- **Lição:** Mover bytes não é trabalho da API: URLs pré-assinadas deixam os clientes enviarem os blocos direto ao object storage, e a API fica com requisições de metadados pequenas e rápidas.
+- **Configuração:** `file-sync` · perfil `load` · alvo 1.000 req/s · 80% leituras · semente 101 · caos `off`
+- **Metas:** p99 < 150 ms · taxa de erro < 0,5%
+- **Tente:** Rode e leia o gargalo (API de sincronização, threads). Conecte o cliente ao Object Store com filtro write, remova a aresta API → blocos e reduza a latência da API para ≈ 10 ms.
+- **Observe:** Como está, a API fica sem threads (ρ ≈ 1,9): ≈ 57% das requisições falham e o p99 chega a segundos, inclusive nas leituras de metadados. Com uploads diretos a API fica em ρ ≈ 0,5 e o p99 em ≈ 85 ms.
+- **Relacionado:** [Estudos de caso](../../2027.1/classes/case-studies/index.md) · [Computação & serviços](../../2027.1/classes/compute/index.md) · [Estimativas](../../2027.1/classes/estimation/index.md)
+
+<div class="sdp" data-scenario="file-sync" data-mode="compact" data-height="420"></div>
+
+??? question "Perguntas para discutir"
+
+    1. Use a Lei de Little: quantas threads da API 200 uploads/s de 400 ms mantêm ocupadas?
+    2. Por que dividir arquivos em blocos de 4 MB, e como hashes do conteúdo dos blocos economizam uploads (deduplicação)?
+    3. Como um cliente descobre que outro dispositivo mudou um arquivo sem consultar os metadados a cada segundo?
+
+## Busca por proximidade: estabelecimentos perto de mim { #proximity-search }
+
+"Restaurantes num raio de 2 km": 5 000 req/s, 99% leituras, poucas avaliações e estabelecimentos novos. A consulta varre uma faixa de latitude/longitude no PostgreSQL (60 ms, mesmo com duas réplicas de leitura). A maioria das buscas vem dos mesmos bairros movimentados. Dê ao caminho de leitura um índice geoespacial e faça cache das células populares.
+
+- **Lição:** Uma consulta de proximidade vira a busca de algumas células de um índice geoespacial (geohash, quadtree); células populares se repetem, então um cache na frente absorve a maior parte das leituras, e o banco relacional fica só com as escritas.
+- **Configuração:** `proximity-search` · perfil `load` · alvo 5.000 req/s · 99% leituras · semente 103 · caos `off`
+- **Metas:** p99 < 120 ms · taxa de erro < 0,5% · custo/mês < US$ 6.000
+- **Tente:** Mande as leituras para um Cache na frente de um nó Search (filtro read) e mantenha as escritas no SQL (filtro write). Depois reduza a taxa de acerto e observe o índice.
+- **Observe:** Como está, o banco roda a ρ ≈ 1,5: ≈ 28% de erros e p99 ≈ 650 ms. Com o cache de células (80% de acertos), o índice geográfico recebe ≈ 1 000 req/s a ρ ≈ 0,4 e o p99 fica em ≈ 80 ms.
+- **Relacionado:** [Estudos de caso](../../2027.1/classes/case-studies/index.md) · [Bancos de dados](../../2027.1/classes/databases/index.md) · [Cache](../../2027.1/classes/caching/index.md)
+
+<div class="sdp" data-scenario="proximity-search" data-mode="compact" data-height="420"></div>
+
+??? question "Perguntas para discutir"
+
+    1. Por que uma faixa de latitude E longitude é lenta com dois índices B-tree comuns?
+    2. Uma busca perto da borda de uma célula geohash: quais células você precisa ler?
+    3. Uma cidade densa e um deserto vazio na mesma grade: como uma quadtree adapta o tamanho da célula?
+
+## Juiz online: o contest começa { #code-judge }
+
+Programadores leem problemas e enviam soluções: 400 req/s, 90% leituras. Cada submissão roda num sandbox por ≈ 2 s, e a API espera o veredito. Em t = 60 s começa um contest e o tráfego triplica por dois minutos. As threads da API se acumulam atrás dos sandboxes e até as páginas dos problemas param de carregar. Aceite as submissões na hora e julgue-as a partir de uma fila.
+
+- **Lição:** Trabalho lento e não confiável (rodar código do usuário) não pertence ao caminho da requisição: a API aceita a submissão, uma fila a guarda e os runners a consomem no seu ritmo; o atraso da fila é o tempo até o veredito.
+- **Configuração:** `code-judge` · perfil `load` · alvo 400 req/s · 90% leituras · semente 107 · caos `off` · eventos programados: t = 60 s — o contest começa
+- **Metas:** taxa de erro < 1% · p99 < 200 ms · atraso do consumidor < 90 s
+- **Tente:** Coloque uma Message Queue entre a API e os runners (filtro write), conecte os runners ao banco e dimensione-os com vazão = réplicas ÷ 2 s.
+- **Observe:** Como está, os runners ficam a ρ ≈ 4,5 durante o contest, a maioria das submissões falha e o p99 passa de 12 s. Com a fila e 160 runners nada falha, o p99 fica em ≈ 35 ms e a fila chega a ≈ 4 000 submissões: o último veredito da rajada espera cerca de um minuto.
+- **Relacionado:** [Estudos de caso](../../2027.1/classes/case-studies/index.md) · [Mensageria](../../2027.1/classes/messaging/index.md) · [Computação & serviços](../../2027.1/classes/compute/index.md)
+
+<div class="sdp" data-scenario="code-judge" data-mode="compact" data-height="420"></div>
+
+??? question "Perguntas para discutir"
+
+    1. Quantos runners acompanham 120 submissões/s de 2 s cada, e por que menos é aceitável aqui?
+    2. Como o cliente descobre o veredito: polling, long polling ou um canal de push?
+    3. O que isola o código de um usuário do de outro e do próprio juiz (contêineres, gVisor, limites)?
+
+## Leilão online: o último minuto { #online-auction }
+
+Observadores atualizam o preço atual e licitantes dão lances: 2 000 req/s, 90% leituras, tudo no PostgreSQL. Em t = 60 s os leilões mais disputados entram no último minuto e o tráfego triplica (sniping). Todo lance precisa ser ordenado por leilão e nenhum pode se perder, mas os observadores não precisam ir ao banco para ver o preço.
+
+- **Lição:** Separe os dois caminhos: observadores leem um preço em cache (ele só muda quando um lance vence), e lances vão para um log durável particionado pelo id do leilão, para que os lances de cada leilão sejam aplicados em ordem.
+- **Configuração:** `online-auction` · perfil `load` · alvo 2.000 req/s · 90% leituras · semente 109 · caos `off` · eventos programados: t = 60 s — último minuto: sniping
+- **Metas:** p99 < 150 ms · taxa de erro < 0,5% · atraso do consumidor < 15 s
+- **Tente:** Adicione um Cache para as leituras (filtro read) e Kafka → workers de lances para as escritas (filtro write). Compare a carga do banco no último minuto.
+- **Observe:** Como está, o banco roda a ρ ≈ 2,3 no último minuto: ≈ 38% de erros. Com o cache e o log o banco fica em ρ ≈ 0,7, o p99 em ≈ 30 ms e os lances são aplicados em ≈ 1 s.
+- **Relacionado:** [Estudos de caso](../../2027.1/classes/case-studies/index.md) · [Mensageria](../../2027.1/classes/messaging/index.md) · [Cache](../../2027.1/classes/caching/index.md)
+
+<div class="sdp" data-scenario="online-auction" data-mode="compact" data-height="420"></div>
+
+??? question "Perguntas para discutir"
+
+    1. Dois lances de mesmo valor chegam ao mesmo tempo: qual vence, e onde isso é decidido?
+    2. Um leilão recebe a maioria dos lances: o que acontece com a sua partição do Kafka (chave quente)?
+    3. O licitante deve esperar o lance ser aplicado, ou só estar no log? O que cada opção diz ao usuário?
+
+## Agregador de cliques: conte, não armazene { #ad-click-aggregator }
+
+Cada clique num anúncio redireciona o usuário e precisa ser contado para cobrança: 10 000 cliques/s, mais alguns anunciantes lendo seus painéis (2%). Hoje cada clique é um INSERT no PostgreSQL antes do redirecionamento, e os painéis rodam COUNT(*) na mesma tabela. Deixe o redirecionamento rápido e agregue os cliques num stream.
+
+- **Lição:** Com uma taxa alta de eventos, grave cada evento uma vez num log e agregue-o num stream; o banco atrás recebe uma escrita por chave e janela, e os painéis leem contagens, nunca os eventos brutos.
+- **Configuração:** `ad-click-aggregator` · perfil `load` · alvo 10.000 req/s · 2% leituras · semente 113 · caos `off`
+- **Metas:** p99 < 50 ms · taxa de erro < 0,1% · atraso do consumidor < 10 s
+- **Tente:** Mande os cliques para o Kafka (filtro write), consuma-os com nós Analytics e grave num banco NoSQL de contagens com razão de aresta 0,01. Aponte as leituras dos painéis para as contagens.
+- **Observe:** Como está, o banco fica saturado por escritas (ρ ≈ 9): ≈ 90% dos cliques falham. Com o stream nada falha, o p99 fica em ≈ 33 ms, os agregadores rodam a ρ ≈ 0,6 e o banco de contagens recebe ≈ 100 escritas/s.
+- **Relacionado:** [Estudos de caso](../../2027.1/classes/case-studies/index.md) · [Mensageria](../../2027.1/classes/messaging/index.md) · [Bancos de dados](../../2027.1/classes/databases/index.md)
+
+<div class="sdp" data-scenario="ad-click-aggregator" data-mode="compact" data-height="420"></div>
+
+??? question "Perguntas para discutir"
+
+    1. Um agregador cai depois de contar mas antes de confirmar o offset: o que acontece com a contagem, e como torná-la exata?
+    2. Por que guardar os cliques brutos no object storage se ninguém os lê online?
+    3. Como achar os 100 anúncios mais clicados da última hora sem manter um contador para cada anúncio?
+
+## Crawler: sites lentos prendem os fetchers { #web-crawler }
+
+O crawler busca 800 páginas/s de uma fila de fronteira e as armazena. Uma busca leva ≈ 150 ms, então os fetchers são limitados por threads, não por CPU. Em t = 60 s uma parte da web fica lenta (4×): sem timeout, toda thread espera os sites lentos e a fronteira acumula. Mantenha o crawl andando.
+
+- **Lição:** A vazão de um worker limitado por I/O é threads ÷ tempo por chamada; quando o lado remoto fica lento, a vazão cai junto. I/O assíncrono (muitas buscas simultâneas) e um timeout mantêm o crawl andando.
+- **Configuração:** `web-crawler` · perfil `load` · alvo 800 req/s · 100% leituras · semente 127 · caos `off` · eventos programados: t = 60 s — uma parte da web fica lenta
+- **Metas:** atraso do consumidor < 20 s · taxa de erro < 3%
+- **Tente:** Rode e observe o backlog da fronteira depois de t = 60 s. Aumente as threads dos fetchers para 400 e ponha um timeout de 2 s na aresta para a web.
+- **Observe:** Como está, os fetchers caem para ≈ 200 páginas/s enquanto a web está lenta e a fronteira chega a ≈ 40 000 URLs (atraso de minutos). Com 400 threads por fetcher eles acompanham a ρ ≈ 0,5 e o atraso fica perto de zero.
+- **Relacionado:** [Estudos de caso](../../2027.1/classes/case-studies/index.md) · [Confiabilidade](../../2027.1/classes/reliability/index.md) · [Mensageria](../../2027.1/classes/messaging/index.md)
+
+<div class="sdp" data-scenario="web-crawler" data-mode="compact" data-height="420"></div>
+
+??? question "Perguntas para discutir"
+
+    1. Com 4 fetchers de 50 threads, qual é a vazão a 150 ms por busca, e a 600 ms?
+    2. Como ser educado com um site (robots.txt, uma fila por host, crawl delay) sem deixar os fetchers ociosos?
+    3. Como evitar buscar a mesma página duas vezes quando muitos links apontam para ela?
+
+## Busca de posts: indexe de forma assíncrona { #post-search }
+
+Usuários buscam posts por palavra-chave: 4 000 req/s, 60% buscas, 40% posts novos. Hoje cada post novo é gravado no banco de posts e indexado de forma síncrona na mesma requisição; indexar custa tanto quanto buscar, então o cluster de índice carrega as duas cargas. As buscas podem ficar alguns segundos atrás dos posts novos.
+
+- **Lição:** A indexação não precisa estar no caminho de escrita: o post é gravado, um evento vai para um log e indexadores atualizam o índice em lote; o índice então atende as buscas, com um cache para consultas repetidas.
+- **Configuração:** `post-search` · perfil `load` · alvo 4.000 req/s · 60% leituras · semente 131 · caos `off`
+- **Metas:** p99 < 150 ms · taxa de erro < 0,5% · atraso do consumidor < 5 s
+- **Tente:** Mande as escritas para o Kafka (filtro write) e deixe workers indexadores atualizarem o índice com razão de aresta 0,1. Ponha um Cache na frente do índice para as leituras (filtro read).
+- **Observe:** Como está, o índice roda a ρ ≈ 1,3: ≈ 22% de erros e p99 ≈ 1,3 s. Com o log, a indexação em lote e o cache de consultas o índice fica em ρ ≈ 0,4, o p99 em ≈ 80 ms e posts novos aparecem na busca em menos de um segundo.
+- **Relacionado:** [Estudos de caso](../../2027.1/classes/case-studies/index.md) · [Mensageria](../../2027.1/classes/messaging/index.md) · [Bancos de dados](../../2027.1/classes/databases/index.md)
+
+<div class="sdp" data-scenario="post-search" data-mode="compact" data-height="420"></div>
+
+??? question "Perguntas para discutir"
+
+    1. Por que indexar em lote (uma requisição a cada dez posts) custa ao índice bem menos que dez requisições avulsas?
+    2. Um usuário posta e busca o post na hora: como esconder dele o atraso da indexação?
+    3. Um post é apagado: como a remoção chega ao índice e ao cache de consultas?
+
+## Comentários ao vivo: um milhão de espectadores consultando { #live-comments }
+
+Um vídeo ao vivo tem 100 000 espectadores; cada um pergunta "algum comentário novo?" a cada 5 s (20 000 req/s) e 1% das requisições publica um comentário. Toda consulta roda "comentários desde t" no banco. A resposta é a mesma para todos os espectadores do stream durante um segundo. Tire as consultas do banco e empurre os comentários novos.
+
+- **Lição:** Quando todos os espectadores fazem a mesma pergunta, responda-a uma vez por segundo na borda (micro-cache), e empurre os comentários novos via pub/sub para servidores de tempo real em vez de o banco responder cada consulta.
+- **Configuração:** `live-comments` · perfil `load` · alvo 20.000 req/s · 99% leituras · semente 137 · caos `off`
+- **Metas:** p99 < 100 ms · taxa de erro < 0,5%
+- **Tente:** Ponha uma CDN na frente com 98% de acertos, publique os comentários novos no Pub/Sub (filtro write) para um serviço de push em tempo real e reduza a API.
+- **Observe:** Como está, o banco roda a ρ ≈ 1,6: ≈ 41% de erros e p99 ≈ 1,4 s. Com a CDN a origem vê ≈ 550 req/s e o p99 fica em ≈ 40 ms. Confira o custo: o preço por requisição da CDN deixa a solução mais cara que a original, um trade-off real que conexões de push (SSE, WebSockets) evitam.
+- **Relacionado:** [Estudos de caso](../../2027.1/classes/case-studies/index.md) · [Tráfego & borda](../../2027.1/classes/edge/index.md) · [Mensageria](../../2027.1/classes/messaging/index.md)
+
+<div class="sdp" data-scenario="live-comments" data-mode="compact" data-height="420"></div>
+
+??? question "Perguntas para discutir"
+
+    1. Com 100 000 espectadores consultando a cada 5 s, quantas requisições um micro-cache de 1 s deixa passar por nó de borda?
+    2. Cada servidor de tempo real atende seus próprios espectadores: como um comentário chega aos servidores de todos os espectadores daquele stream?
+    3. Um stream recebe 5 000 comentários/s: quais você mostra, e onde descarta o resto?
 
 ## Sistemas de IA { #ai-systems }
 

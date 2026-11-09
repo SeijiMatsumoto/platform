@@ -677,7 +677,8 @@ test("all scenario ids of the course are implemented", () => {
   ids.forEach((id) => assert(SC.get(id), "missing " + id));
   SC.ALL.forEach((s) => assert(s.title.en && s.title.pt && s.brief.en && s.brief.pt, s.id + " texts"));
   SC.ALL.forEach((s) => assert(/^boxoffice-/.test(s.id) === (s.group === "boxoffice"), s.id + ": group " + s.group));
-  ["ticketing", "distributed-cache", "url-shortener", "news-feed", "chat", "ride-sharing", "video-streaming", "notification-system", "payment-system", "search-autocomplete"]
+  ["ticketing", "distributed-cache", "url-shortener", "news-feed", "chat", "ride-sharing", "video-streaming", "notification-system", "payment-system", "search-autocomplete",
+    "file-sync", "proximity-search", "code-judge", "online-auction", "ad-click-aggregator", "web-crawler", "post-search", "live-comments"]
     .forEach((id) => assert(SC.get(id).group === "case", id + " is not in the case-study group"));
 });
 

@@ -47,6 +47,14 @@ Every scenario of the [System Design Playground](../index.md) is a small lab: a 
 | [Database failover: RTO and RPO](#db-failover) | A failover costs the time without a primary (RTO) and the writes not yet replicated (RPO) |
 | [Ticketing: 2 M fans, 60 k seats](#ticketing) | Polls at the edge, joins in a waiting room, shoppers admitted at ≈ 33/s |
 | [Distributed cache: memory or throughput?](#distributed-cache) | Size a cache by memory and by throughput; the hit ratio sizes the database |
+| [File sync: keep the bytes off your servers](#file-sync) | Large uploads go straight to object storage with pre-signed URLs; the API only handles metadata |
+| [Proximity search: businesses near me](#proximity-search) | "Near me" is a geospatial index lookup (geohash cells), with the popular cells cached |
+| [Online judge: the contest starts](#code-judge) | Slow, untrusted work runs from a queue; the API answers "pending" and the queue lag is the wait for a verdict |
+| [Online auction: the last minute](#online-auction) | Watchers read a cached price; bids go to an ordered log partitioned by auction |
+| [Ad click aggregator: count, don't store](#ad-click-aggregator) | High-rate events are aggregated in a stream; dashboards read the counts, not the raw events |
+| [Web crawler: slow sites hold the fetchers](#web-crawler) | I/O-bound workers are sized by threads ÷ latency; timeouts bound what a slow site can take |
+| [Post search: index asynchronously](#post-search) | Indexing leaves the write path through a log and bulk indexers; repeated queries are cached |
+| [Live comments: a million viewers polling](#live-comments) | Identical polls are answered at the edge; new comments are pushed through pub/sub |
 | [AI summarizer: the prompt is too large](#ai-summarizer) | Each call needs chunk tokens + reserved output tokens <= context limit. Watch aggregate model calls against quota. |
 | [FAQ assistant: stop sending the whole handbook](#ai-faq) | Retrieval recall and citation support are separate checks. Retrieving too little loses facts; retrieving everything defeats the token budget. |
 | [Order-status assistant: use a tool for live facts](#ai-order-status) | Only successful tool results may become status answers. Bound attempts and explicitly report unavailability. |
@@ -571,7 +579,7 @@ Flash-sale checkout: 1 500 req/s, half of them writes (orders), on a DB Cluster 
 
 ## More case studies { #more-case-studies }
 
-Two case studies of the course that have no generic scenario above.
+Two case studies of the course that have no generic scenario above, then classic interview problems, each reduced to the one idea it is known for.
 
 ## Ticketing: 2 M fans, 60 k seats { #ticketing }
 
@@ -610,6 +618,158 @@ The case study: 1 billion items of 1 KB, 2 million reads/s, 95% hits. 1.1 TB fit
     1. How many nodes are needed by memory and by throughput, and why does the case end with 50?
     2. Losing 1 of 25 nodes adds ≈ 80 000 misses/s: can the database take them?
     3. Why does consistent hashing matter when a node is added or lost?
+
+## File sync: keep the bytes off your servers { #file-sync }
+
+Desktop clients sync folders: 1 000 req/s, 80% ask "what changed?" (a metadata read), 20% upload a 4 MB block. Today every block streams through the sync API on its way to object storage: each upload holds an API thread for ≈ 400 ms, and the metadata checks wait behind them. Let clients send the bytes straight to storage.
+
+- **Lesson:** Moving bytes is not an API's job: pre-signed URLs let clients upload blocks straight to object storage, and the API is left with small, fast metadata requests.
+- **Setup:** `file-sync` · profile `load` · target 1,000 req/s · 80% reads · seed 101 · chaos `off`
+- **Goals:** p99 < 150 ms · error rate < 0.5%
+- **Try:** Run it and read the bottleneck (sync API, threads). Connect the client to the Object Store with filter write, remove the API → blocks edge and lower the API latency to ≈ 10 ms.
+- **Observe:** As drawn, the API runs out of threads (ρ ≈ 1.9): ≈ 57% of the requests fail and p99 reaches seconds, metadata reads included. With direct uploads the API sits at ρ ≈ 0.5 and p99 is ≈ 85 ms.
+- **Related:** [Case studies](../../2027.1/classes/case-studies/index.md) · [Compute & services](../../2027.1/classes/compute/index.md) · [Estimation](../../2027.1/classes/estimation/index.md)
+
+<div class="sdp" data-scenario="file-sync" data-mode="compact" data-height="420"></div>
+
+??? question "Questions to discuss"
+
+    1. Use Little's Law: how many API threads do 200 uploads/s of 400 ms keep busy?
+    2. Why split files into 4 MB blocks, and how do content hashes of the blocks save uploads (deduplication)?
+    3. How does a client learn that another device changed a file without polling the metadata every second?
+
+## Proximity search: businesses near me { #proximity-search }
+
+"Restaurants within 2 km": 5 000 req/s, 99% reads, a few new reviews and businesses. The query scans a latitude/longitude range in PostgreSQL (60 ms, even with two read replicas). Most searches come from the same busy neighbourhoods. Give the read path a geospatial index and cache the popular cells.
+
+- **Lesson:** A proximity query becomes a lookup of a few cells of a geospatial index (geohash, quadtree); popular cells repeat, so a cache in front takes most of the reads, and the relational database keeps only the writes.
+- **Setup:** `proximity-search` · profile `load` · target 5,000 req/s · 99% reads · seed 103 · chaos `off`
+- **Goals:** p99 < 120 ms · error rate < 0.5% · cost/month < US$ 6,000
+- **Try:** Send reads to a Cache in front of a Search node (filter read) and keep writes on SQL (filter write). Then lower the hit ratio and watch the index.
+- **Observe:** As drawn, the database runs at ρ ≈ 1.5: ≈ 28% errors and p99 ≈ 650 ms. With the cell cache (80% hits), the geo index takes ≈ 1 000 req/s at ρ ≈ 0.4 and p99 is ≈ 80 ms.
+- **Related:** [Case studies](../../2027.1/classes/case-studies/index.md) · [Databases](../../2027.1/classes/databases/index.md) · [Caching](../../2027.1/classes/caching/index.md)
+
+<div class="sdp" data-scenario="proximity-search" data-mode="compact" data-height="420"></div>
+
+??? question "Questions to discuss"
+
+    1. Why is a range on latitude AND longitude slow with two ordinary B-tree indexes?
+    2. A search near the edge of a geohash cell: which cells must you read?
+    3. A dense city and an empty desert in the same grid: how does a quadtree adapt the cell size?
+
+## Online judge: the contest starts { #code-judge }
+
+Coders read problems and submit solutions: 400 req/s, 90% reads. Each submission runs in a sandbox for ≈ 2 s, and the API waits for the verdict. At t = 60 s a contest starts and traffic triples for two minutes. API threads pile up behind the sandboxes and even problem pages stop loading. Accept submissions at once and judge them from a queue.
+
+- **Lesson:** Slow, untrusted work (running user code) does not belong on the request path: the API accepts the submission, a queue holds it, and runners take it at their own pace; the queue lag is the time to a verdict.
+- **Setup:** `code-judge` · profile `load` · target 400 req/s · 90% reads · seed 107 · chaos `off` · scripted events: t = 60 s — the contest starts
+- **Goals:** error rate < 1% · p99 < 200 ms · consumer lag < 90 s
+- **Try:** Put a Message Queue between the API and the runners (filter write), connect the runners to the database, and size them with throughput = replicas ÷ 2 s.
+- **Observe:** As drawn, the runners are at ρ ≈ 4.5 during the contest, most submissions fail and p99 passes 12 s. With the queue and 160 runners nothing fails, p99 is ≈ 35 ms and the queue peaks at ≈ 4 000 submissions: the last verdict of the rush waits about a minute.
+- **Related:** [Case studies](../../2027.1/classes/case-studies/index.md) · [Messaging](../../2027.1/classes/messaging/index.md) · [Compute & services](../../2027.1/classes/compute/index.md)
+
+<div class="sdp" data-scenario="code-judge" data-mode="compact" data-height="420"></div>
+
+??? question "Questions to discuss"
+
+    1. How many runners keep up with 120 submissions/s of 2 s each, and why is fewer acceptable here?
+    2. How does the client learn the verdict: polling, long polling, or a push channel?
+    3. What isolates one user's code from another's and from the judge (containers, gVisor, limits)?
+
+## Online auction: the last minute { #online-auction }
+
+Watchers refresh the current price and bidders place bids: 2 000 req/s, 90% reads, all on PostgreSQL. At t = 60 s the hottest auctions enter their final minute and traffic triples (sniping). Every bid must be ordered per auction and none may be lost, but the watchers don't need to hit the database to see the price.
+
+- **Lesson:** Separate the two paths: watchers read a cached price (it changes only when a bid wins), and bids go to a durable log partitioned by auction id, so each auction's bids are applied in order.
+- **Setup:** `online-auction` · profile `load` · target 2,000 req/s · 90% reads · seed 109 · chaos `off` · scripted events: t = 60 s — final minute: sniping
+- **Goals:** p99 < 150 ms · error rate < 0.5% · consumer lag < 15 s
+- **Try:** Add a Cache for the reads (filter read) and Kafka → bid workers for the writes (filter write). Compare the database load during the final minute.
+- **Observe:** As drawn, the database runs at ρ ≈ 2.3 in the final minute: ≈ 38% errors. With the cache and the log the database stays at ρ ≈ 0.7, p99 is ≈ 30 ms and bids are applied within ≈ 1 s.
+- **Related:** [Case studies](../../2027.1/classes/case-studies/index.md) · [Messaging](../../2027.1/classes/messaging/index.md) · [Caching](../../2027.1/classes/caching/index.md)
+
+<div class="sdp" data-scenario="online-auction" data-mode="compact" data-height="420"></div>
+
+??? question "Questions to discuss"
+
+    1. Two bids of the same amount arrive at the same time: which wins, and where is that decided?
+    2. One auction gets most of the bids: what happens to its Kafka partition (hot key)?
+    3. Should the bidder wait for the bid to be applied, or only for it to be in the log? What does each tell the user?
+
+## Ad click aggregator: count, don't store { #ad-click-aggregator }
+
+Every ad click redirects the user and must be counted for billing: 10 000 clicks/s, plus a few advertisers reading their dashboards (2%). Today each click is an INSERT into PostgreSQL before the redirect, and the dashboards run COUNT(*) on the same table. Make the redirect fast and aggregate the clicks in a stream.
+
+- **Lesson:** At a high event rate, write each event once to a log and aggregate it in a stream; the store behind it receives one write per key and window, and the dashboards read counts, never the raw events.
+- **Setup:** `ad-click-aggregator` · profile `load` · target 10,000 req/s · 2% reads · seed 113 · chaos `off`
+- **Goals:** p99 < 50 ms · error rate < 0.1% · consumer lag < 10 s
+- **Try:** Send clicks to Kafka (filter write), consume them with Analytics nodes, and write to a NoSQL counts store with edge ratio 0.01. Point the dashboard reads at the counts.
+- **Observe:** As drawn, the database is saturated by writes (ρ ≈ 9): ≈ 90% of the clicks fail. With the stream nothing fails, p99 is ≈ 33 ms, the aggregators run at ρ ≈ 0.6 and the counts store receives ≈ 100 writes/s.
+- **Related:** [Case studies](../../2027.1/classes/case-studies/index.md) · [Messaging](../../2027.1/classes/messaging/index.md) · [Databases](../../2027.1/classes/databases/index.md)
+
+<div class="sdp" data-scenario="ad-click-aggregator" data-mode="compact" data-height="420"></div>
+
+??? question "Questions to discuss"
+
+    1. An aggregator crashes after counting but before committing its offset: what happens to the count, and how do you make it exact?
+    2. Why keep the raw clicks in object storage if nobody reads them online?
+    3. How would you find the top 100 ads of the last hour without keeping a counter for every ad?
+
+## Web crawler: slow sites hold the fetchers { #web-crawler }
+
+The crawler fetches 800 pages/s from a frontier queue and stores them. A fetch takes ≈ 150 ms, so fetchers are bound by threads, not CPU. At t = 60 s a slice of the web turns slow (4×): with no timeout, every thread waits on the slow sites and the frontier backs up. Keep the crawl moving.
+
+- **Lesson:** An I/O-bound worker's throughput is threads ÷ time per call; when the remote side slows down, throughput falls with it. Async I/O (many concurrent fetches) and a timeout keep the crawl moving.
+- **Setup:** `web-crawler` · profile `load` · target 800 req/s · 100% reads · seed 127 · chaos `off` · scripted events: t = 60 s — a slice of the web turns slow
+- **Goals:** consumer lag < 20 s · error rate < 3%
+- **Try:** Run it and watch the frontier's backlog after t = 60 s. Raise the fetchers' threads to 400 and put a 2 s timeout on the edge to the web.
+- **Observe:** As drawn, the fetchers drop to ≈ 200 pages/s while the web is slow and the frontier reaches ≈ 40 000 URLs (lag of minutes). With 400 threads per fetcher they keep pace at ρ ≈ 0.5 and the lag stays near zero.
+- **Related:** [Case studies](../../2027.1/classes/case-studies/index.md) · [Reliability](../../2027.1/classes/reliability/index.md) · [Messaging](../../2027.1/classes/messaging/index.md)
+
+<div class="sdp" data-scenario="web-crawler" data-mode="compact" data-height="420"></div>
+
+??? question "Questions to discuss"
+
+    1. With 4 fetchers of 50 threads, what is the throughput at 150 ms per fetch, and at 600 ms?
+    2. How do you stay polite to one site (robots.txt, one queue per host, crawl delay) without idling the fetchers?
+    3. How do you avoid fetching the same page twice when many links point to it?
+
+## Post search: index asynchronously { #post-search }
+
+Users search posts by keyword: 4 000 req/s, 60% searches, 40% new posts. Today each new post is written to the posts store and indexed synchronously in the same request; indexing costs as much as a search, so the index cluster carries both loads. Searches may lag new posts by a few seconds.
+
+- **Lesson:** Indexing does not need to be on the write path: the post is stored, an event goes to a log, and indexers update the index in bulk; the index then serves searches, with a cache for repeated queries.
+- **Setup:** `post-search` · profile `load` · target 4,000 req/s · 60% reads · seed 131 · chaos `off`
+- **Goals:** p99 < 150 ms · error rate < 0.5% · consumer lag < 5 s
+- **Try:** Send writes to Kafka (filter write) and let indexer workers update the index with edge ratio 0.1. Put a Cache in front of the index for the reads (filter read).
+- **Observe:** As drawn, the index runs at ρ ≈ 1.3: ≈ 22% errors and p99 ≈ 1.3 s. With the log, bulk indexing and the query cache the index is at ρ ≈ 0.4, p99 is ≈ 80 ms and new posts are searchable within a second.
+- **Related:** [Case studies](../../2027.1/classes/case-studies/index.md) · [Messaging](../../2027.1/classes/messaging/index.md) · [Databases](../../2027.1/classes/databases/index.md)
+
+<div class="sdp" data-scenario="post-search" data-mode="compact" data-height="420"></div>
+
+??? question "Questions to discuss"
+
+    1. Why does bulk indexing (one request per ten posts) cost the index much less than ten single requests?
+    2. A user posts and searches for it immediately: how do you hide the indexing lag from them?
+    3. A post is deleted: how does the delete reach the index and the query cache?
+
+## Live comments: a million viewers polling { #live-comments }
+
+A live video has 100 000 viewers; each asks "any new comments?" every 5 s (20 000 req/s) and 1% of the requests post a comment. Every poll runs "comments since t" on the database. The answer is the same for every viewer of the stream within a second. Take the polls off the database and push new comments out.
+
+- **Lesson:** When every viewer asks the same question, answer it once per second at the edge (micro-cache), and push new comments through pub/sub to real-time servers instead of having the database answer every poll.
+- **Setup:** `live-comments` · profile `load` · target 20,000 req/s · 99% reads · seed 137 · chaos `off`
+- **Goals:** p99 < 100 ms · error rate < 0.5%
+- **Try:** Put a CDN in front with a 98% hit ratio, publish new comments to Pub/Sub (filter write) for a real-time push service, and scale the API down.
+- **Observe:** As drawn, the database runs at ρ ≈ 1.6: ≈ 41% errors and p99 ≈ 1.4 s. With the CDN the origin sees ≈ 550 req/s and p99 is ≈ 40 ms. Check the cost: the CDN's per-request price makes the solution more expensive than the original, a real trade-off that push connections (SSE, WebSockets) avoid.
+- **Related:** [Case studies](../../2027.1/classes/case-studies/index.md) · [Traffic & edge](../../2027.1/classes/edge/index.md) · [Messaging](../../2027.1/classes/messaging/index.md)
+
+<div class="sdp" data-scenario="live-comments" data-mode="compact" data-height="420"></div>
+
+??? question "Questions to discuss"
+
+    1. With 100 000 viewers polling every 5 s, how many requests does a 1 s micro-cache let through per edge node?
+    2. Each real-time server holds its own viewers: how does a comment reach the servers of every viewer of that stream?
+    3. A stream gets 5 000 comments/s: which ones do you show, and where do you drop the rest?
 
 ## AI systems { #ai-systems }
 

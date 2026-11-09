@@ -1010,6 +1010,194 @@
     solution: derive(dc, { set: [["cache", { replicas: 50 }]] })
   });
 
+  /* ════════════════════════════════════════════════════════════════════
+     More classic interview problems (case studies). Each one isolates the
+     single idea the problem is known for, with numbers small enough to
+     derive on paper.
+     ════════════════════════════════════════════════════════════════════ */
+
+  /* ═══ file-sync (Dropbox) ═══ */
+  var fsy = D([N("client", "client", 80, 220, "desktop clients"), N("lb", "lb", 270, 220),
+    N("api", "app", 470, 220, "sync API", { replicas: 4, latencyMs: 400, sigma: 0.5, threads: 50 }),
+    N("db", "sql", 720, 120, "file metadata"), N("obj", "objstore", 720, 320, "blocks")],
+  [E("client", "lb"), E("lb", "api"), E("api", "db"), E("api", "obj", { filter: "write" })]);
+  CASE({
+    id: "file-sync",
+    title: T("File sync: keep the bytes off your servers", "Sincronização de arquivos: tire os bytes dos seus servidores"),
+    brief: T("Desktop clients sync folders: 1 000 req/s, 80% ask \"what changed?\" (a metadata read), 20% upload a 4 MB block. Today every block streams through the sync API on its way to object storage: each upload holds an API thread for ≈ 400 ms, and the metadata checks wait behind them. Let clients send the bytes straight to storage.",
+      "Clientes desktop sincronizam pastas: 1 000 req/s, 80% perguntam \"o que mudou?\" (uma leitura de metadados), 20% enviam um bloco de 4 MB. Hoje cada bloco passa pela API de sincronização a caminho do object storage: cada upload prende uma thread da API por ≈ 400 ms, e as consultas de metadados esperam atrás deles. Deixe os clientes mandarem os bytes direto para o storage."),
+    settings: { profile: "load", targetRps: 1000, readRatio: 0.8, seed: 101, chaos: "off" },
+    design: fsy,
+    goals: [G("p99", "<", 150), G("errorRate", "<", 0.5)],
+    hints: [
+      T("Little's Law on the API: 200 uploads/s × 0.4 s = 80 threads busy just moving bytes. Pre-signed URLs let the client PUT the block to the Object Store itself (client → objstore, filter write).", "Lei de Little na API: 200 uploads/s × 0,4 s = 80 threads ocupadas só movendo bytes. URLs pré-assinadas deixam o cliente fazer o PUT do bloco no Object Store (client → objstore, filtro write)."),
+      T("Without the bytes, the API only signs URLs and commits metadata: a few ms per request, so its latency drops (set it to ≈ 10 ms) and two replicas are enough.", "Sem os bytes, a API só assina URLs e grava metadados: poucos ms por requisição, então sua latência cai (ajuste para ≈ 10 ms) e duas réplicas bastam.")
+    ],
+    solution: D([N("client", "client", 80, 220, "desktop clients"), N("lb", "lb", 270, 220),
+      N("api", "app", 470, 220, "sync API", { replicas: 3, latencyMs: 10, threads: 200 }),
+      N("db", "sql", 720, 120, "file metadata"), N("obj", "objstore", 470, 400, "blocks")],
+    [E("client", "lb"), E("lb", "api"), E("api", "db"), E("client", "obj", { filter: "write" })])
+  });
+
+  /* ═══ proximity-search (Yelp) ═══ */
+  var px = D([N("client", "mobile", 80, 200, "users"), N("lb", "lb", 270, 200), N("app", "app", 470, 200, "places API", { replicas: 12 }),
+    N("db", "sql", 720, 200, "businesses (lat/lon scan)", { capacity: 1200, latencyMs: 60, readReplicas: 2 })],
+  [E("client", "lb"), E("lb", "app"), E("app", "db")]);
+  CASE({
+    id: "proximity-search",
+    title: T("Proximity search: businesses near me", "Busca por proximidade: estabelecimentos perto de mim"),
+    brief: T("\"Restaurants within 2 km\": 5 000 req/s, 99% reads, a few new reviews and businesses. The query scans a latitude/longitude range in PostgreSQL (60 ms, even with two read replicas). Most searches come from the same busy neighbourhoods. Give the read path a geospatial index and cache the popular cells.",
+      "\"Restaurantes num raio de 2 km\": 5 000 req/s, 99% leituras, poucas avaliações e estabelecimentos novos. A consulta varre uma faixa de latitude/longitude no PostgreSQL (60 ms, mesmo com duas réplicas de leitura). A maioria das buscas vem dos mesmos bairros movimentados. Dê ao caminho de leitura um índice geoespacial e faça cache das células populares."),
+    settings: { profile: "load", targetRps: 5000, readRatio: 0.99, seed: 103, chaos: "off" },
+    design: px,
+    goals: [G("p99", "<", 120), G("errorRate", "<", 0.5), G("costPerMonth", "<", 6000)],
+    hints: [
+      T("A geohash (or quadtree) turns \"near me\" into a lookup of a few cells: reads go app → Cache → Search (filter read). Writes (new reviews) still go to SQL, the source of truth.", "Um geohash (ou quadtree) transforma \"perto de mim\" na busca de algumas células: leituras vão app → Cache → Search (filtro read). Escritas (avaliações novas) continuam no SQL, a fonte da verdade."),
+      T("Searches cluster in a few cells: a cache keyed by (cell, category) hits ≈ 80%, so Search only sees ≈ 1 000 req/s.", "As buscas se concentram em poucas células: um cache com chave (célula, categoria) acerta ≈ 80%, e o Search só vê ≈ 1 000 req/s.")
+    ],
+    solution: derive(px, {
+      dropEdges: ["app-db"], set: [["db", { readReplicas: 0 }]], move: [["db", 720, 340]],
+      nodes: [N("cache", "cache", 720, 120, "cell cache", { hitRatio: 0.8 }), N("geo", "search", 960, 120, "geo index", { replicas: 3 })],
+      edges: [E("app", "cache", { filter: "read" }), E("cache", "geo"), E("app", "db", { filter: "write" })]
+    })
+  });
+
+  /* ═══ code-judge (LeetCode) ═══ */
+  var cj = D([N("client", "client", 80, 220, "coders"), N("lb", "lb", 270, 220), N("app", "app", 470, 220, "contest API", { replicas: 4 }),
+    N("db", "sql", 720, 120, "problems + results"), N("judge", "worker", 720, 340, "sandbox runner", { replicas: 60, capacity: 0.5, latencyMs: 2000, sigma: 0.3, threads: 1, queueLimit: 4 })],
+  [E("client", "lb"), E("lb", "app"), E("app", "db"), E("app", "judge", { filter: "write" })]);
+  CASE({
+    id: "code-judge",
+    title: T("Online judge: the contest starts", "Juiz online: o contest começa"),
+    brief: T("Coders read problems and submit solutions: 400 req/s, 90% reads. Each submission runs in a sandbox for ≈ 2 s, and the API waits for the verdict. At t = 60 s a contest starts and traffic triples for two minutes. API threads pile up behind the sandboxes and even problem pages stop loading. Accept submissions at once and judge them from a queue.",
+      "Programadores leem problemas e enviam soluções: 400 req/s, 90% leituras. Cada submissão roda num sandbox por ≈ 2 s, e a API espera o veredito. Em t = 60 s começa um contest e o tráfego triplica por dois minutos. As threads da API se acumulam atrás dos sandboxes e até as páginas dos problemas param de carregar. Aceite as submissões na hora e julgue-as a partir de uma fila."),
+    settings: { profile: "load", targetRps: 400, readRatio: 0.9, seed: 107, chaos: "off" },
+    design: cj,
+    events: [{ t: 60, type: "viral", factor: 3, durationS: 120, label: T("the contest starts", "o contest começa") }],
+    goals: [G("errorRate", "<", 1), G("p99", "<", 200), G("consumerLag", "<", 90)],
+    hints: [
+      T("Put a Message Queue between the API and the runners (app → queue → runner, filter write). The API answers \"pending\" and the client polls the result.", "Coloque uma Message Queue entre a API e os runners (app → queue → runner, filtro write). A API responde \"pendente\" e o cliente consulta o resultado."),
+      T("Runner throughput = replicas × 1 / 2 s. In the contest 120 submissions/s arrive: with 160 runners (80/s) the queue grows by 40/s for two minutes and the last verdict waits about a minute.", "Vazão dos runners = réplicas × 1 / 2 s. No contest chegam 120 submissões/s: com 160 runners (80/s) a fila cresce 40/s por dois minutos e o último veredito espera cerca de um minuto.")
+    ],
+    solution: derive(cj, {
+      dropEdges: ["app-judge"], set: [["judge", { replicas: 160 }]], move: [["judge", 940, 340]],
+      nodes: [N("q", "queue", 720, 340, "submissions")], edges: [E("app", "q", { filter: "write" }), E("q", "judge"), E("judge", "db")]
+    })
+  });
+
+  /* ═══ online-auction ═══ */
+  var oa = D([N("client", "client", 80, 220, "bidders + watchers"), N("lb", "lb", 270, 220), N("app", "app", 470, 220, "auction API", { replicas: 16 }),
+    N("db", "sql", 720, 220, "auctions + bids")],
+  [E("client", "lb"), E("lb", "app"), E("app", "db")]);
+  CASE({
+    id: "online-auction",
+    title: T("Online auction: the last minute", "Leilão online: o último minuto"),
+    brief: T("Watchers refresh the current price and bidders place bids: 2 000 req/s, 90% reads, all on PostgreSQL. At t = 60 s the hottest auctions enter their final minute and traffic triples (sniping). Every bid must be ordered per auction and none may be lost, but the watchers don't need to hit the database to see the price.",
+      "Observadores atualizam o preço atual e licitantes dão lances: 2 000 req/s, 90% leituras, tudo no PostgreSQL. Em t = 60 s os leilões mais disputados entram no último minuto e o tráfego triplica (sniping). Todo lance precisa ser ordenado por leilão e nenhum pode se perder, mas os observadores não precisam ir ao banco para ver o preço."),
+    settings: { profile: "load", targetRps: 2000, readRatio: 0.9, seed: 109, chaos: "off" },
+    design: oa,
+    events: [{ t: 60, type: "viral", factor: 3, durationS: 60, label: T("final minute: sniping", "último minuto: sniping") }],
+    goals: [G("p99", "<", 150), G("errorRate", "<", 0.5), G("consumerLag", "<", 15)],
+    hints: [
+      T("Reads: app → Cache (filter read) → db. The current price changes only when a bid wins, so even a 1 s TTL absorbs almost every refresh.", "Leituras: app → Cache (filtro read) → db. O preço atual só muda quando um lance vence, então até um TTL de 1 s absorve quase todas as atualizações."),
+      T("Bids: app → Kafka (filter write), partitioned by auction id, so each auction's bids stay in order; bid workers apply them to the database. Kafka acknowledges the bid durably in milliseconds.", "Lances: app → Kafka (filtro write), particionado pelo id do leilão, para que os lances de cada leilão fiquem em ordem; workers aplicam-nos no banco. O Kafka confirma o lance de forma durável em milissegundos.")
+    ],
+    solution: derive(oa, {
+      dropEdges: ["app-db"], move: [["db", 1000, 220]],
+      nodes: [N("cache", "cache", 720, 110, "price cache", { hitRatio: 0.95 }), N("k", "kafka", 720, 330, "bids (by auction)"), N("bw", "worker", 880, 330, "bid processor", { replicas: 6 })],
+      edges: [E("app", "cache", { filter: "read" }), E("cache", "db"), E("app", "k", { filter: "write" }), E("k", "bw"), E("bw", "db")]
+    })
+  });
+
+  /* ═══ ad-click-aggregator ═══ */
+  var ac = D([N("client", "client", 80, 220, "ad clicks"), N("lb", "lb", 270, 220), N("app", "app", 470, 220, "click redirect", { replicas: 40 }),
+    N("db", "sql", 720, 220, "clicks (one row each)")],
+  [E("client", "lb"), E("lb", "app"), E("app", "db")]);
+  CASE({
+    id: "ad-click-aggregator",
+    title: T("Ad click aggregator: count, don't store", "Agregador de cliques: conte, não armazene"),
+    brief: T("Every ad click redirects the user and must be counted for billing: 10 000 clicks/s, plus a few advertisers reading their dashboards (2%). Today each click is an INSERT into PostgreSQL before the redirect, and the dashboards run COUNT(*) on the same table. Make the redirect fast and aggregate the clicks in a stream.",
+      "Cada clique num anúncio redireciona o usuário e precisa ser contado para cobrança: 10 000 cliques/s, mais alguns anunciantes lendo seus painéis (2%). Hoje cada clique é um INSERT no PostgreSQL antes do redirecionamento, e os painéis rodam COUNT(*) na mesma tabela. Deixe o redirecionamento rápido e agregue os cliques num stream."),
+    settings: { profile: "load", targetRps: 10000, readRatio: 0.02, seed: 113, chaos: "off" },
+    design: ac,
+    goals: [G("p99", "<", 50), G("errorRate", "<", 0.1), G("consumerLag", "<", 10)],
+    hints: [
+      T("Clicks: app → Kafka (filter write); the redirect answers as soon as the event is in the log. Stream aggregators (Analytics) consume it and keep per-minute counts per ad.", "Cliques: app → Kafka (filtro write); o redirecionamento responde assim que o evento está no log. Agregadores de stream (Analytics) o consomem e mantêm contagens por minuto e por anúncio."),
+      T("Aggregation is a batching ratio: one write per ad per minute instead of one per click. Set the edge ratio from the aggregators to the counts store to 0.01. Dashboards read the counts, never the raw clicks.", "Agregar é uma razão de lote: uma escrita por anúncio por minuto em vez de uma por clique. Ajuste a razão da aresta dos agregadores ao banco de contagens para 0,01. Os painéis leem as contagens, nunca os cliques brutos.")
+    ],
+    solution: D([N("client", "client", 80, 220, "ad clicks"), N("lb", "lb", 270, 220), N("app", "app", 470, 220, "click redirect", { replicas: 30 }),
+      N("k", "kafka", 700, 320, "click events", { partitions: 12 }), N("agg", "analytics", 900, 320, "stream aggregators", { replicas: 8 }),
+      N("counts", "nosql", 1120, 220, "counts per ad-minute"), N("raw", "objstore", 1120, 420, "raw clicks (audit)")],
+    [E("client", "lb"), E("lb", "app"), E("app", "k", { filter: "write" }), E("app", "counts", { filter: "read" }), E("k", "agg"),
+      E("agg", "counts", { ratio: 0.01 }), E("agg", "raw", { ratio: 0.001 })])
+  });
+
+  /* ═══ web-crawler ═══ */
+  var wc = D([N("seeds", "scheduler", 80, 220, "URL frontier feed", { jobs: 800, everyS: 1, spreadS: 1 }), N("q", "queue", 270, 220, "frontier"),
+    N("fetch", "worker", 470, 220, "fetchers", { replicas: 4, capacity: 1000, latencyMs: 5, threads: 50 }),
+    N("web", "thirdparty", 720, 120, "the web", { latencyMs: 150, quota: 100000 }), N("obj", "objstore", 720, 320, "pages")],
+  [E("seeds", "q"), E("q", "fetch"), E("fetch", "web"), E("fetch", "obj")]);
+  CASE({
+    id: "web-crawler",
+    title: T("Web crawler: slow sites hold the fetchers", "Crawler: sites lentos prendem os fetchers"),
+    brief: T("The crawler fetches 800 pages/s from a frontier queue and stores them. A fetch takes ≈ 150 ms, so fetchers are bound by threads, not CPU. At t = 60 s a slice of the web turns slow (4×): with no timeout, every thread waits on the slow sites and the frontier backs up. Keep the crawl moving.",
+      "O crawler busca 800 páginas/s de uma fila de fronteira e as armazena. Uma busca leva ≈ 150 ms, então os fetchers são limitados por threads, não por CPU. Em t = 60 s uma parte da web fica lenta (4×): sem timeout, toda thread espera os sites lentos e a fronteira acumula. Mantenha o crawl andando."),
+    settings: { profile: "load", targetRps: 800, readRatio: 1, seed: 127, chaos: "off" },
+    design: wc,
+    events: [{ t: 60, type: "slow", target: "web", factor: 4, durationS: 90, label: T("a slice of the web turns slow", "uma parte da web fica lenta") }],
+    goals: [G("consumerLag", "<", 20), G("errorRate", "<", 3)],
+    hints: [
+      T("Throughput of a fetcher = threads ÷ time per fetch. 4 × 50 threads ÷ 0.15 s ≈ 1 330 pages/s normally, ≈ 330 when sites are 4× slower.", "Vazão de um fetcher = threads ÷ tempo por busca. 4 × 50 threads ÷ 0,15 s ≈ 1 330 páginas/s normalmente, ≈ 330 quando os sites ficam 4× mais lentos."),
+      T("Fetching is I/O: use async I/O (many more threads per fetcher) and put a timeout on the edge to the web, so a slow site costs at most the timeout. Skip and re-queue it later, politely.", "Buscar é I/O: use I/O assíncrono (muito mais threads por fetcher) e ponha um timeout na aresta para a web, para que um site lento custe no máximo o timeout. Pule e re-enfileire depois, com educação.")
+    ],
+    solution: derive(wc, { set: [["fetch", { threads: 400 }]], edgeParams: [["fetch-web", { timeoutMs: 2000 }]] })
+  });
+
+  /* ═══ post-search ═══ */
+  var psr = D([N("client", "client", 80, 220, "users"), N("lb", "lb", 270, 220), N("app", "app", 470, 220, "posts API", { replicas: 10 }),
+    N("db", "nosql", 720, 120, "posts"), N("se", "search", 720, 320, "search index", { replicas: 4 })],
+  [E("client", "lb"), E("lb", "app"), E("app", "db", { filter: "write" }), E("app", "se")]);
+  CASE({
+    id: "post-search",
+    title: T("Post search: index asynchronously", "Busca de posts: indexe de forma assíncrona"),
+    brief: T("Users search posts by keyword: 4 000 req/s, 60% searches, 40% new posts. Today each new post is written to the posts store and indexed synchronously in the same request; indexing costs as much as a search, so the index cluster carries both loads. Searches may lag new posts by a few seconds.",
+      "Usuários buscam posts por palavra-chave: 4 000 req/s, 60% buscas, 40% posts novos. Hoje cada post novo é gravado no banco de posts e indexado de forma síncrona na mesma requisição; indexar custa tanto quanto buscar, então o cluster de índice carrega as duas cargas. As buscas podem ficar alguns segundos atrás dos posts novos."),
+    settings: { profile: "load", targetRps: 4000, readRatio: 0.6, seed: 131, chaos: "off" },
+    design: psr,
+    goals: [G("p99", "<", 150), G("errorRate", "<", 0.5), G("consumerLag", "<", 5)],
+    hints: [
+      T("Writes: app → posts store and app → Kafka (filter write); indexer workers consume the log and update the index in bulk (edge ratio ≈ 0.1: one bulk request per ten posts).", "Escritas: app → banco de posts e app → Kafka (filtro write); workers indexadores consomem o log e atualizam o índice em lote (razão da aresta ≈ 0,1: uma requisição em lote a cada dez posts)."),
+      T("Reads: app → Cache (filter read) → index. Popular queries repeat; even a short TTL takes half of them off the index.", "Leituras: app → Cache (filtro read) → índice. Consultas populares se repetem; mesmo um TTL curto tira metade delas do índice.")
+    ],
+    solution: D([N("client", "client", 80, 220, "users"), N("lb", "lb", 270, 220), N("app", "app", 470, 220, "posts API", { replicas: 10 }),
+      N("db", "nosql", 720, 60, "posts"), N("cache", "cache", 720, 190, "query cache", { hitRatio: 0.5 }), N("k", "kafka", 720, 340, "post events"),
+      N("ix", "worker", 930, 340, "indexers", { replicas: 4, capacity: 500, latencyMs: 20, threads: 50 }), N("se", "search", 960, 190, "search index", { replicas: 4 })],
+    [E("client", "lb"), E("lb", "app"), E("app", "db", { filter: "write" }), E("app", "k", { filter: "write" }), E("app", "cache", { filter: "read" }),
+      E("cache", "se"), E("k", "ix"), E("ix", "se", { ratio: 0.1 })])
+  });
+
+  /* ═══ live-comments ═══ */
+  var lc = D([N("viewers", "client", 80, 220, "viewers"), N("lb", "lb", 270, 220), N("app", "app", 470, 220, "comments API", { replicas: 40 }),
+    N("db", "sql", 720, 220, "comments", { readReplicas: 3 })],
+  [E("viewers", "lb"), E("lb", "app"), E("app", "db")]);
+  CASE({
+    id: "live-comments",
+    title: T("Live comments: a million viewers polling", "Comentários ao vivo: um milhão de espectadores consultando"),
+    brief: T("A live video has 100 000 viewers; each asks \"any new comments?\" every 5 s (20 000 req/s) and 1% of the requests post a comment. Every poll runs \"comments since t\" on the database. The answer is the same for every viewer of the stream within a second. Take the polls off the database and push new comments out.",
+      "Um vídeo ao vivo tem 100 000 espectadores; cada um pergunta \"algum comentário novo?\" a cada 5 s (20 000 req/s) e 1% das requisições publica um comentário. Toda consulta roda \"comentários desde t\" no banco. A resposta é a mesma para todos os espectadores do stream durante um segundo. Tire as consultas do banco e empurre os comentários novos."),
+    settings: { profile: "load", targetRps: 20000, readRatio: 0.99, seed: 137, chaos: "off" },
+    design: lc,
+    goals: [G("p99", "<", 100), G("errorRate", "<", 0.5)],
+    hints: [
+      T("Polls: a CDN with a 1 s micro-cache (filter read) answers almost every poll at the edge: the origin sees about one request per second per stream and edge node.", "Consultas: uma CDN com micro-cache de 1 s (filtro read) responde quase todas na borda: a origem vê cerca de uma requisição por segundo por stream e nó de borda."),
+      T("Comments: publish them (app → Pub/Sub, filter write); real-time servers subscribed to the stream push them over SSE/WebSockets. The database only stores them.", "Comentários: publique-os (app → Pub/Sub, filtro write); servidores de tempo real assinantes do stream os empurram por SSE/WebSockets. O banco só os armazena.")
+    ],
+    solution: D([N("viewers", "client", 80, 220, "viewers"), N("cdn", "cdn", 260, 220, "", { hitRatio: 0.98, respKB: 2 }), N("lb", "lb", 440, 220),
+      N("app", "app", 620, 220, "comments API", { replicas: 4 }), N("db", "sql", 840, 120, "comments"),
+      N("ps", "pubsub", 840, 320, "stream topic"), N("rt", "notifications", 1040, 320, "real-time push")],
+    [E("viewers", "cdn"), E("cdn", "lb"), E("lb", "app"), E("app", "db"), E("app", "ps", { filter: "write" }), E("ps", "rt")])
+  });
+
   /* AI systems: fundamentals before ingestion, isolation, recovery and routing. */
   add({
     id: "ai-summarizer",
