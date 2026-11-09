@@ -344,6 +344,7 @@
     var self = this;
     design = normalizeDesign(design);
     this.design = design;
+    if (this.done) this.resultsStale = true;
     this.aiResult = null;
     var nodes = [], byId = {};
     design.nodes.forEach(function (dn) {
@@ -596,10 +597,12 @@
 
   /* ─── Live settings (target, read %, chaos) ─── */
   Sim.prototype.setSettings = function (s) {
+    var before = JSON.stringify(this.settings);
     if (s.targetRps !== undefined) this.settings.targetRps = clamp(fin(num(s.targetRps, this.settings.targetRps)), 0, 1e8);
     if (s.readRatio !== undefined) this.settings.readRatio = clamp(num(s.readRatio, 0.9), 0, 1);
     if (own(CHAOS, s.chaos)) this.settings.chaos = s.chaos;
     if (s.spikeFactor !== undefined) this.settings.spikeFactor = clamp(fin(num(s.spikeFactor, 5)), 0, 1000);
+    if (this.done && before !== JSON.stringify(this.settings)) { this.resultsStale = true; this.aiResult = null; }
   };
 
   /* ════════════════ Events ════════════════ */
@@ -1929,7 +1932,7 @@
       observed: services.length ? services.filter(function (n) { return n.observed; }).length / services.length * 100 : 100,
       tracing: this.hasTracing ? 1 : 0, logs: this.hasLogs ? 1 : 0, alerting: this.hasAlerting ? 1 : 0
     };
-    if (this.done && this.scenario && this.scenario.aiKind && AI) {
+    if (this.done && !this.resultsStale && this.scenario && this.scenario.aiKind && AI) {
       if (!this.aiResult) this.aiResult = AI.evaluate(this.design, this.scenario, this.settings);
       Object.assign(result, this.aiResult.metrics);
     }
@@ -1945,6 +1948,7 @@
 
   Sim.prototype.goals = function () {
     var st = this.stats();
+    if (this.resultsStale) return ((this.scenario && this.scenario.goals) || []).map(function (g) { return { goal: g, value: undefined, pass: false }; });
     return ((this.scenario && this.scenario.goals) || []).map(function (g) { return checkGoal(g, st); });
   };
 
@@ -1965,9 +1969,9 @@
       .map(function (n) { return { id: n.id, label: n.label, maxRho: n.st.maxRho }; })
       .sort(function (a, b) { return b.maxRho - a.maxRho; }).slice(0, 5);
     return {
-      profile: this.settings.profile, seed: this.settings.seed, chaos: this.settings.chaos, targetRps: this.settings.targetRps,
+      profile: this.settings.profile, seed: this.settings.seed, chaos: this.settings.chaos, targetRps: this.settings.targetRps, readRatio: this.settings.readRatio,
       duration: Math.round(this.t * 10) / 10, complete: this.done, window: this.window.slice(), sloMs: slo,
-      ai: this.aiResult, stats: st, maxSustained: best, goals: this.goals(), bottleneck: this.bottleneck(), hottest: hot,
+      stale: !!this.resultsStale, ai: this.aiResult, stats: st, maxSustained: best, goals: this.goals(), bottleneck: this.bottleneck(), hottest: hot,
       events: this.log.filter(function (l) { return l.phase === "start" && l.type !== "scale"; }),
       theory: this.theory, breakpoint: this.breakpoint, knee: this.knee, nodes: this.nodes.length
     };

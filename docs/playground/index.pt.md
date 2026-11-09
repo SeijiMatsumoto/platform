@@ -10,7 +10,7 @@ Desenhe um sistema com os componentes da disciplina, coloque-o sob carga e **vej
 
 <div class="sdp" data-scenario="monolith" data-mode="full" data-height="640"></div>
 
-Escolha um cenário na barra (ou **Tela em branco**), aperte ▶ e leia os painéis abaixo da tela. O menu agrupa os cenários: blocos de construção, [BoxOffice](scenarios/index.md#boxoffice) (o sistema das aulas e dos labs de 2027.1, com seus números) e estudos de caso; o [guia de cenários](scenarios/index.md) explica o que cada um ensina. Seu projeto fica salvo neste navegador para cada cenário; **Restaurar o cenário** traz o original de volta.
+Escolha um cenário na barra (ou **Tela em branco**), aperte ▶ e leia os painéis abaixo da tela. O menu agrupa os cenários: blocos de construção, [BoxOffice](scenarios/index.md#boxoffice) (o sistema das aulas e dos labs de 2027.1, com seus números) e estudos de caso; o [guia de cenários](scenarios/index.md) explica o que cada um ensina. Seu projeto, configurações de carga e duas últimas execuções concluídas ficam salvos neste navegador por cenário; **Restaurar o cenário** limpa esse estado salvo e traz o original de volta.
 
 O cenário selecionado fica na URL, por exemplo `?scenario=ai-faq`. Copie o endereço para abrir o mesmo cenário em outro lugar; recarregar e Voltar/Avançar preservam a seleção. Use **Copiar link de compartilhamento** para incluir também o projeto editado e as configurações.
 
@@ -319,3 +319,11 @@ Escreva uma instrução curta *Experimente* antes de cada simulador: o que mudar
 O menu inclui oito [labs de sistemas de IA](scenarios/index.md#ai-systems), em ordem: resumo, busca e ferramentas atuais, depois ingestão, isolamento de tenants, pesquisa durável, reembolsos seguros e roteamento. Cada um tem design inicial que falha, critérios, dicas e solução possível.
 
 As verificações de IA rodam ao final usando fixtures sintéticos rotulados. Tempos, tokens, preços e falhas são hipóteses didáticas explícitas, separadas dos gráficos de carga. Nunca chamam modelos pagos e não demonstram qualidade real. Leia o relatório para ver a carga e os resultados dos fixtures.
+
+## Resultados e comparação de execuções
+
+Ao concluir uma execução, o Relatório inclui exemplos de falhas nas verificações de IA: IDs de fontes e pedidos, jobs perdidos, reembolsos duplicados ou orçamentos excedidos. Editar o projeto ou a carga marca resultados concluídos como desatualizados; execute novamente para avaliar a nova configuração.
+
+O Relatório compara o resultado atual com a execução anterior, incluindo latência, erros, custo e metas do cenário. A carga anterior aparece para distinguir mudanças no projeto de mudanças na carga. Comparações e configurações sobrevivem ao recarregamento; JSON e links compartilhados continuam incluindo o projeto e as configurações atuais. Diagramas salvos antigos são restaurados automaticamente.
+
+A cobertura de tráfego de IA é conservadora: segue o caminho ativo mais forte até cada serviço necessário, considerando razões e filtros de leitura/escrita. Pedidos não atendidos não contam como sucesso nos fixtures. As verificações pressupõem o cliente único do cenário; não modelam partições arbitrárias entre vários clientes nem substituem o motor de carga.

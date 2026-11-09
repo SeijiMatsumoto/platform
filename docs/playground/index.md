@@ -10,7 +10,7 @@ Draw a system with the components of the course, put it under load, and **watch 
 
 <div class="sdp" data-scenario="monolith" data-mode="full" data-height="640"></div>
 
-Pick a scenario in the toolbar (or **Blank canvas**), press ▶ and read the panels below the canvas. The menu groups the scenarios: building blocks, [BoxOffice](scenarios/index.md#boxoffice) (the system of the 2027.1 classes and labs, with their numbers) and case studies; the [scenario guide](scenarios/index.md) explains what each one teaches. Your design is saved in this browser for each scenario; **Reset scenario** brings the original back.
+Pick a scenario in the toolbar (or **Blank canvas**), press ▶ and read the panels below the canvas. The menu groups the scenarios: building blocks, [BoxOffice](scenarios/index.md#boxoffice) (the system of the 2027.1 classes and labs, with their numbers) and case studies; the [scenario guide](scenarios/index.md) explains what each one teaches. Your design, load settings, and two latest completed runs are saved in this browser for each scenario; **Reset scenario** clears that saved workspace and brings the original back.
 
 The selected scenario is stored in the URL, for example `?scenario=ai-faq`. Copy the address to open the same scenario elsewhere; reload and Back/Forward preserve the selection. Use **Copy a share link** to include your edited design and settings as well.
 
@@ -319,3 +319,11 @@ Write a short *Try it* instruction before each embed: what to change, what to ob
 The scenario menu includes eight [AI systems labs](scenarios/index.md#ai-systems), ordered from summarization, retrieval and live tools to ingestion, tenant isolation, durable research, safe refunds and model routing. Each has a failing initial design, acceptance checks, hints and a possible solution.
 
 AI checks run at the end using synthetic labeled fixtures. Their timings, token counts, prices and failures are explicit teaching assumptions, separate from the fluid load charts. They never call a paid model and cannot establish real-world model quality. Read the report for the fixture workload and results.
+
+## Results and run comparisons
+
+After a run finishes, the Report includes examples of failed AI checks: source IDs, request IDs, lost jobs, duplicate refunds, or exceeded budgets. Editing the design or workload marks completed results as outdated; run again to score the new configuration.
+
+The Report compares the current result with the previous completed run, including latency, errors, cost, and scenario goals. The previous workload is shown so you can distinguish design changes from load changes. Comparisons and settings survive reloads; JSON exports and share links still include the current design and settings. Old saved diagrams are restored automatically.
+
+AI traffic coverage is conservative: it follows the strongest active path to each required service, accounting for call ratios and read/write filters. Unserved requests cannot count as successful fixture outcomes. These checks assume the scenario’s single client workload; they do not model arbitrary traffic partitioning across multiple clients or replace the load engine.

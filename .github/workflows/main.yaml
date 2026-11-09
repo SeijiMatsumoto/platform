@@ -2,40 +2,61 @@ name: ci
 on:
   - push
   - pull_request
-  
-# Environment
+
 env:
   CI: true
 
-# Jobs to run
+permissions:
+  contents: read
+
 jobs:
-     
-  # Build and deploy documentation site
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - name: Test Playground
+        run: |
+          node scripts/playground/test_engine.mjs
+          node scripts/playground/test_ai.mjs
+          node scripts/playground/test_url.mjs
+          node scripts/playground/test_netsim.mjs
+      - name: Validate course content
+        run: |
+          node scripts/csim/test.mjs
+          node scripts/diagram/test.mjs
+          node scripts/support/validate.mjs
+          uv run scripts/i18n/check.py
+          uv run scripts/handouts/snapshots.py --check
+      - name: Generate handouts and build both languages
+        run: |
+          uv run scripts/handouts/snapshots.py
+          uv run zensical-i18n build --clean
+      - uses: actions/upload-artifact@v4
+        with:
+          name: site
+          path: site/
+          if-no-files-found: error
+          retention-days: 3
+
   deploy:
+    needs: validate
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-
-      # Checkout source form GitHub
       - uses: actions/checkout@v4
-
-      # Install uv; it installs the Python of .python-version (3.12) by itself
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: actions/download-artifact@v4
         with:
-          enable-cache: true
-
-      # Dependencies exactly as in uv.lock
-      - run: uv sync --frozen
-
-      # 2027.1 hands-on: cumulative BoxOffice zips (boxoffice-after-lab-<n>.zip), not committed
-      - run: uv run scripts/handouts/snapshots.py
-
-      # build: English (default) into site/, Brazilian Portuguese into site/pt/
-      - run: uv run zensical-i18n build --clean
-
-      # deploy (Zensical has no gh-deploy: publish site/ to the gh-pages branch)
+          name: site
+          path: site/
       - uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}

@@ -96,4 +96,43 @@ test("AI metrics remain pending until completion and appear in engine reports", 
   assert.ok(sim.report().ai.evidence[0].en);
   assert.ok(sim.goals().every(g => g.pass));
 });
+test("zero traffic and excluding filters cannot pass the AI fixtures", () => {
+  for (const id of ids) {
+    const sc = SC.get(id);
+    for (const params of [{ ratio: 0 }, { ratio: 0.5 }, { filter: "write" }]) {
+      const metrics = replay(id, d => d.edges.forEach(e => Object.assign(e.params, params)));
+      assert.ok(sc.goals.some(g => !E.checkGoal(g, metrics).pass), id + " falsely passed disabled flow");
+    }
+  }
+  const sc = SC.get("ai-faq"), d = structuredClone(sc.solution);
+  d.edges.find(e => e.to === "index").params.ratio = 0;
+  assert.equal(AI.evaluate(d, sc, sc.settings).metrics.aiRetrievalRecall, 0);
+});
+test("failed checks carry bounded bilingual witness cases; passing solutions do not", () => {
+  for (const id of ids) {
+    const sc = SC.get(id);
+    const result = AI.evaluate(E.normalizeDesign(sc.design), sc, sc.settings);
+    assert.ok(result.failures.length, id + " has no failure explanation");
+    for (const f of result.failures) assert.ok(f.caseId && f.en && f.pt && f.metric);
+    assert.equal(AI.evaluate(E.normalizeDesign(sc.solution), sc, sc.settings).failures.length, 0);
+  }
+  const sc = SC.get("ai-refunds"), result = AI.evaluate(E.normalizeDesign(sc.design), sc, sc.settings);
+  assert.ok(result.failures.some(f => f.caseId === "refund-1" && f.metric === "aiDuplicateRefunds"));
+});
+test("completed results become stale after settings or design edits and require a fresh run", () => {
+  const sc = SC.get("ai-summarizer");
+  const run = () => { const sim = E.create(sc.solution, { ...sc.settings, duration: 1 }, { scenario: sc }); while (!sim.done) sim.step(10); return sim; };
+  for (const edit of [sim => sim.setSettings({ targetRps: 2000000 }), sim => sim.setDesign(sc.design)]) {
+    const sim = run(); assert.ok(sim.stats().aiShortP95 < 10);
+    edit(sim);
+    assert.equal(sim.resultsStale, true);
+    assert.equal(sim.stats().aiShortP95, undefined);
+    assert.equal(sim.report().stale, true);
+    assert.ok(sim.goals().every(g => !g.pass && g.value === undefined));
+  }
+  const unchanged = run(); unchanged.setSettings({ targetRps: sc.settings.targetRps });
+  assert.equal(!!unchanged.resultsStale, false);
+  assert.equal(run().report().stale, false);
+});
+
 console.log(`\n${passed} passed`);

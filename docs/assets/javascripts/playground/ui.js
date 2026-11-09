@@ -379,6 +379,19 @@
         }
       } catch (e) { design = null; }
     }
+    this.lastRun = null; this.previousRun = null; this.capturedSim = this.sim;
+    if (this.full) {
+      try {
+        var workspace = JSON.parse(store("sdp:v2:" + sc.id));
+        if (workspace && workspace.version === 2) {
+          if (!design && workspace.design && Array.isArray(workspace.design.nodes)) {
+            design = workspace.design; cleanSettings(workspace.settings, this.settings); this.restored = true;
+          }
+          function validRun(run) { return run && run.settings && run.design && Array.isArray(run.design.nodes) && run.scenario === sc.id && run.report && run.report.complete && !run.report.stale && run.report.stats && Array.isArray(run.report.goals) ? run : null; }
+          this.lastRun = validRun(workspace.lastRun); this.previousRun = validRun(workspace.previousRun);
+        }
+      } catch (e) { /* invalid saved data: use defaults or the legacy design */ }
+    }
     if (!design && this.full) {
       var saved = store("sdp:v1:" + sc.id);
       if (saved) { try { design = JSON.parse(saved); this.restored = !!(design && Array.isArray(design.nodes)); if (!this.restored) design = null; } catch (e) { design = null; } }
@@ -389,25 +402,72 @@
   };
 
   P.newSim = function () {
+    this.captureCompletedRun();
     this.sim = ENG.create(this.design, this.settings, { scenario: this.scenario });
     this.running = false;
     this.acc = 0;
     this.logLen = -1;
     this.reportShown = false;
     this.updatePlayButton();
+    if (this.panels && this.tab === "report") this.showTab("metrics");
+    this.persistWorkspace();
+  };
+
+  P.persistWorkspace = function () {
+    if (!this.full) return;
+    store("sdp:v2:" + this.scenario.id, JSON.stringify({ version: 2, design: this.design, settings: this.settings, lastRun: this.lastRun, previousRun: this.previousRun }));
+  };
+  P.captureCompletedRun = function () {
+    if (!this.sim || !this.sim.done || this.sim.resultsStale || this.capturedSim === this.sim || !this.sim.scenario || this.sim.scenario.id !== this.scenario.id) return;
+    this.previousRun = this.lastRun;
+    this.lastRun = SCN.clone({ scenario: this.scenario.id, design: this.sim.design, settings: this.sim.settings, report: this.sim.report() });
+    this.capturedSim = this.sim;
+    this.persistWorkspace();
+  };
+  P.comparison = function (report) {
+    var old = report.complete && !report.stale ? this.previousRun : this.lastRun;
+    if (!old || old.scenario !== this.scenario.id) return null;
+    var current = report.complete && !report.stale, keys = ["p95", "errorRate", "costPerMonth"];
+    this.scenario.goals.forEach(function (g) { if (keys.indexOf(g.metric) < 0) keys.push(g.metric); });
+    return { baseline: old, rows: keys.map(function (key) {
+      var before = old.report.stats[key], after = current ? report.stats[key] : undefined;
+      return { metric: key, before: before, after: after, delta: typeof before === "number" && typeof after === "number" ? after - before : undefined };
+    }) };
+  };
+  function staleNote() { return LANG === "pt" ? "Resultados desatualizados: o projeto ou a carga mudou. Execute novamente para avaliar esta configuração." : "Results are outdated: the design or workload changed. Run again to evaluate this configuration."; }
+  P.renderComparison = function (parent, report) {
+    var comparison = this.comparison(report), self = this;
+    if (!comparison) return;
+    parent.appendChild(el("h4", { text: LANG === "pt" ? "Comparar com a execução anterior" : "Compare with the previous run" }));
+    var old = comparison.baseline;
+    parent.appendChild(el("p", { class: "sdp-note", text: (LANG === "pt" ? "Execução anterior: " : "Previous run: ") + old.settings.targetRps + " req/s · seed " + old.settings.seed + " · " + old.settings.profile + (JSON.stringify(old.design) !== JSON.stringify(this.design) ? (LANG === "pt" ? " · projeto alterado" : " · design changed") : "") }));
+    var table = el("table", { class: "sdp-comparison" }), head = el("tr");
+    (LANG === "pt" ? ["Métrica", "Anterior", "Atual", "Variação"] : ["Metric", "Previous", "Current", "Change"]).forEach(function (label) { head.appendChild(el("th", { scope: "col", text: label })); });
+    var thead = el("thead"); thead.appendChild(head); table.appendChild(thead);
+    var body = el("tbody");
+    comparison.rows.forEach(function (row) {
+      var tr = el("tr"), label = GOAL_LABEL[row.metric];
+      tr.appendChild(el("th", { scope: "row", text: label ? tx(label[0]) : row.metric }));
+      [self.goalValue(row.metric, row.before), self.goalValue(row.metric, row.after), row.delta === undefined ? "—" : (row.delta > 0 ? "+" : row.delta < 0 ? "−" : "") + self.goalValue(row.metric, Math.abs(row.delta))].forEach(function (v) { tr.appendChild(el("td", { text: v })); });
+      body.appendChild(tr);
+    });
+    table.appendChild(body); parent.appendChild(table);
   };
 
   /* Every design change goes through here: undo stack, autosave, live sim.
      keepSide: do not rebuild the inspector (a parameter slider being dragged must stay in the DOM). */
   P.commit = function (before, keepSel, keepSide) {
+    this.captureCompletedRun();
     if (before) { this.undoStack.push(before); if (this.undoStack.length > 100) this.undoStack.shift(); this.redoStack = []; }
     this.design = ENG.normalizeDesign(this.design);
-    if (this.full) store("sdp:v1:" + this.scenario.id, JSON.stringify(this.design));
+    this.persistWorkspace();
     this.sim.setDesign(this.design);
     if (!keepSel && this.sel && !this.findSel(this.sel)) this.sel = null;
     this.renderGraph();
     if (keepSide) this.updateInspectorLive(); else this.renderSide();
     this.updateLive(true);
+    this.updateGoals();
+    if (this.full && this.tab === "report") this.renderReport();
   };
   /* One undo step per parameter gesture: consecutive changes of the same parameter within 1.5 s
      (a slider drag, arrow keys) share the snapshot taken before the first one. */
@@ -456,6 +516,9 @@
     this.toolbar = el("div", { class: "sdp-toolbar", role: "toolbar" });
     root.appendChild(this.toolbar);
     this.buildToolbar();
+    this.staleBanner = el("p", { class: "sdp-note sdp-warn", role: "status", text: staleNote() });
+    this.staleBanner.hidden = true;
+    root.appendChild(this.staleBanner);
 
     var body = el("div", { class: "sdp-body" });
     root.appendChild(body);
@@ -895,6 +958,7 @@
   /* ─── Per-frame live update of the canvas ─── */
   P.updateLive = function (force) {
     var sim = this.sim, self = this;
+    if (this.staleBanner) this.staleBanner.hidden = !sim.resultsStale;
     var running = this.running && this.visible;
     for (var id in this.nodeEls) {
       var ne = this.nodeEls[id], v = sim.nodeView(id), def = ne.def;
@@ -1137,7 +1201,7 @@
       actions.appendChild(sol);
     }
     var rs = el("button", { type: "button", class: "sdp-btn-text", text: t("resetScenario") });
-    rs.addEventListener("click", function () { store("sdp:v1:" + sc.id, null); self.switchScenario(sc.id, true); });
+    rs.addEventListener("click", function () { store("sdp:v1:" + sc.id, null); store("sdp:v2:" + sc.id, null); self.switchScenario(sc.id, true); });
     actions.appendChild(rs);
     ins.appendChild(actions);
     ins.appendChild(el("p", { class: "sdp-meta sdp-kbd-hint", text: t("connect") + ". " + t("panZoom") + "." }));
@@ -1479,12 +1543,14 @@
     if (!this.full) return;
     var p = this.panels.report, sim = this.sim, self = this;
     p.innerHTML = "";
-    if (!(sim.t > 0)) { p.appendChild(el("p", { class: "sdp-meta", text: t("runToReport") })); return; }
-    var r = this.reportData(), st = r.stats;
+    if (!(sim.t > 0) && !this.lastRun) { p.appendChild(el("p", { class: "sdp-meta", text: t("runToReport") })); return; }
+    var saved = !(sim.t > 0), r = saved ? this.lastRun.report : this.reportData(), st = r.stats;
+    if (saved) p.appendChild(el("p", { class: "sdp-note", text: LANG === "pt" ? "Última execução concluída salva. Execute novamente para avaliar o projeto e a carga atuais." : "Last saved completed run. Run again to evaluate the current design and workload." }));
     var head = el("div", { class: "sdp-rep-head" });
     head.innerHTML = "<b>" + esc(t("reportOf")) + "</b> · " + esc(r.profile) + " · " + fmtNum(r.targetRps) + " " + esc(t("rps")) + " · seed " + esc(r.seed) + " · " + esc(t("chaos").toLowerCase()) + " " + esc(tx(CHAOS_LABEL[r.chaos])) + " · " + esc(r.duration) + " s" +
       (r.complete ? "" : ' · <span class="sdp-warn">' + esc(t("partial")) + "</span>") + ' · <span class="sdp-meta">' + esc(t("window")) + " " + esc(r.window[0]) + "–" + esc(r.window[1]) + " s</span>";
     p.appendChild(head);
+    if (r.stale) p.appendChild(el("p", { class: "sdp-warn", role: "status", text: staleNote() }));
     var copy = el("button", { type: "button", class: "sdp-btn-text", text: t("copyMd") });
     copy.addEventListener("click", function () { copyText(self.reportMarkdown(r), function (ok) { self.say(ok ? t("copied") : t("copyFail")); }); });
     head.appendChild(copy);
@@ -1504,6 +1570,12 @@
     if (this.scenario.aiKind) {
       p.appendChild(el("p", { class: "sdp-note", text: aiNote() }));
       if (r.ai) r.ai.evidence.forEach(function (item) { p.appendChild(el("p", { class: "sdp-note", text: tx(item) })); });
+      if (r.ai && r.ai.failures && r.ai.failures.length) {
+        p.appendChild(el("h4", { text: LANG === "pt" ? "Exemplos de falhas" : "Failure examples" }));
+        var examples = el("ul");
+        r.ai.failures.forEach(function (f) { examples.appendChild(el("li", { text: f.caseId + ": " + tx(f) })); });
+        p.appendChild(examples);
+      }
     }
 
     if (r.goals.length) {
@@ -1512,12 +1584,12 @@
       var anyFail = false;
       r.goals.forEach(function (g) {
         anyFail = anyFail || !g.pass;
-        var row = el("div", { class: "sdp-goal " + (g.pass ? "is-pass" : "is-fail") });
-        row.innerHTML = '<span class="sdp-goal-dot" aria-hidden="true"></span><span class="sdp-goal-t">' + esc(self.goalText(g.goal)) + '</span><span class="sdp-goal-v">' + esc(self.goalValue(g.goal.metric, g.value)) + " · " + esc(g.pass ? t("pass") : t("fail")) + "</span>";
+        var row = el("div", { class: "sdp-goal " + (r.stale ? "is-wait" : g.pass ? "is-pass" : "is-fail") });
+        row.innerHTML = '<span class="sdp-goal-dot" aria-hidden="true"></span><span class="sdp-goal-t">' + esc(self.goalText(g.goal)) + '</span><span class="sdp-goal-v">' + esc(self.goalValue(g.goal.metric, g.value)) + " · " + esc(r.stale ? (LANG === "pt" ? "execute novamente" : "run again") : g.pass ? t("pass") : t("fail")) + "</span>";
         gl.appendChild(row);
       });
       p.appendChild(gl);
-      if (anyFail && this.scenario.hints.length) {
+      if (anyFail && !r.stale && this.scenario.hints.length) {
         var ol = el("ol", { class: "sdp-hint-list" });
         this.scenario.hints.forEach(function (h) { ol.appendChild(el("li", { text: tx(h) })); });
         var hc2 = collapsible("sdp-hints", t("hints"), true);
@@ -1525,6 +1597,7 @@
         p.appendChild(hc2.root);
       }
     }
+    this.renderComparison(p, r);
     p.appendChild(el("h4", { text: t("bottleneck") }));
     p.appendChild(el("p", { class: "sdp-bottleneck", text: this.bottleneckText(r.bottleneck) }));
     if (r.hottest.length) p.appendChild(el("p", { class: "sdp-meta", text: t("hottest") + ": " + r.hottest.map(function (h) { return h.label + " " + dec(Math.min(h.maxRho, 9.99), 2); }).join(" · ") }));
@@ -1550,8 +1623,9 @@
   P.reportMarkdown = function (r) {
     var self = this, st = r.stats, lines = [];
     lines.push("## " + t("reportOf") + ": " + tx(this.scenario.title));
+    if (r.stale) lines.push("", staleNote());
     lines.push("");
-    lines.push("- profile `" + r.profile + "`, target " + r.targetRps + " req/s, read " + Math.round(this.settings.readRatio * 100) + "%, seed " + r.seed + ", chaos " + r.chaos + ", " + r.duration + " s (window " + r.window.join("–") + " s)");
+    lines.push("- profile `" + r.profile + "`, target " + r.targetRps + " req/s, read " + Math.round((r.readRatio === undefined ? this.settings.readRatio : r.readRatio) * 100) + "%, seed " + r.seed + ", chaos " + r.chaos + ", " + r.duration + " s (window " + r.window.join("–") + " s)");
     lines.push("- p50 " + fmtMs(st.p50) + " · p95 " + fmtMs(st.p95) + " · p99 " + fmtMs(st.p99) + " · p99.9 " + fmtMs(st.p999));
     lines.push("- error rate " + dec(st.errorRate, 2) + "% · availability " + dec(st.availability, 3) + "% · throughput " + fmtNum(st.throughput) + " req/s · cost " + fmtUsd(st.costPerMonth) + "/month (illustrative)");
     if (r.breakpoint) lines.push("- breaking point " + fmtNum(r.breakpoint.rps) + " req/s");
@@ -1559,16 +1633,22 @@
     if (this.scenario.aiKind) {
       lines.push("", aiNote());
       if (r.ai) r.ai.evidence.forEach(function (item) { lines.push("", tx(item)); });
+      if (r.ai && r.ai.failures) r.ai.failures.forEach(function (f) { lines.push("- " + f.caseId + ": " + tx(f)); });
     }
     if (r.goals.length) {
       lines.push("");
       lines.push("| " + t("goals") + " | value | |");
       lines.push("|---|---|---|");
-      r.goals.forEach(function (g) { lines.push("| " + self.goalText(g.goal) + " | " + self.goalValue(g.goal.metric, g.value) + " | " + (g.pass ? "✅" : "❌") + " |"); });
+      r.goals.forEach(function (g) { lines.push("| " + self.goalText(g.goal) + " | " + self.goalValue(g.goal.metric, g.value) + " | " + (r.stale ? (LANG === "pt" ? "execute novamente" : "run again") : g.pass ? "✅" : "❌") + " |"); });
     }
     lines.push("");
-    lines.push("```mermaid");
-    lines.push(ENG.toMermaid(this.design));
+    var comparison = this.comparison(r);
+    if (comparison) {
+      lines.push("", LANG === "pt" ? "### Comparação com a execução anterior" : "### Comparison with previous run", "", (LANG === "pt" ? "| Métrica | Anterior | Atual | Variação |" : "| Metric | Previous | Current | Change |"), "|---|---|---|---|");
+      comparison.rows.forEach(function (row) { lines.push("| " + row.metric + " | " + self.goalValue(row.metric, row.before) + " | " + self.goalValue(row.metric, row.after) + " | " + (row.delta === undefined ? "—" : (row.delta > 0 ? "+" : row.delta < 0 ? "−" : "") + self.goalValue(row.metric, Math.abs(row.delta))) + " |"); });
+    }
+    lines.push("", "```mermaid");
+    lines.push(ENG.toMermaid(this.lastRun && r === this.lastRun.report ? this.lastRun.design : this.design));
     lines.push("```");
     return lines.join("\n");
   };
@@ -1619,8 +1699,13 @@
     this.afterTicks(true);
   };
   P.setLive = function (s) {
+    this.captureCompletedRun();
     for (var k in s) this.settings[k] = s[k];
     this.sim.setSettings(s);
+    this.updateLive(true);
+    this.persistWorkspace();
+    this.updateGoals();
+    if (this.full && this.tab === "report") this.renderReport();
     if (this.full && !this.sel) this.renderSide();
   };
   P.afterTicks = function (force) {
@@ -1639,6 +1724,7 @@
       if (this.full && this.tab === "trace") this.renderTrace();
     }
     if (this.sim.done && !this.reportShown) {
+      this.captureCompletedRun();
       this.reportShown = true;
       this.running = false;
       this.updatePlayButton();
@@ -1986,9 +2072,11 @@
     this.urlHash = url.hash;
   };
   P.switchScenario = function (id, reset, fromHistory) {
+    this.captureCompletedRun();
+    this.persistWorkspace();
     var sc = SCN.get(id);
     if (!sc) return;
-    if (reset) store("sdp:v1:" + id, null);
+    if (reset) { store("sdp:v1:" + id, null); store("sdp:v2:" + id, null); }
     if (fromHistory) Playground.hashUsed = null;
     this.loadScenario(sc, !!fromHistory);
     if (!fromHistory) this.syncScenarioUrl(!reset, true);
