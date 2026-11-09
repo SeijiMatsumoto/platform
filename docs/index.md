@@ -1,38 +1,24 @@
-# [Platforms, Microservices and APIs](#platforms-microservices-and-apis)
+# System Design Playground
 
+Build a system, put it under load, and explore its behavior. Start with a scenario or use the 2027.1 course material to learn the components.
 
 <div class="grid cards" markdown>
 
--   __[![](./2026.2/2026.2.jpg){ .rounded-corners .width-full}](./2026.2/)__
+-   __[Open the Playground](playground/index.md)__
 
-    ---
+    Draw, simulate, and compare architectures, including eight AI systems scenarios.
 
-    [2026.2](./2026.2/)
+-   __[Scenario guide](playground/scenarios/index.md)__
 
--   __[![](./2026.1/2026.1.jpg){ .rounded-corners .width-full}](./2026.1/)__
+    Prompts, acceptance goals, hints, and initial designs.
 
-    ---
+-   __[2027.1 System Design](2027.1/index.md)__
 
-    [2026.1](./2026.1/)
+    Classes, hands-on labs, exercises, and interview practice.
 
--   __[![](./2025.2/2025.2.jpg){ .rounded-corners .width-full}](./2025.2/)__
+-   __[Component reference](2027.1/reference/components/index.md)__
 
-    ---
-
-    [2025.2](./2025.2/)
-
--   __[![](./2025.1/2025.1.jpg){ .rounded-corners .width-full}](./2025.1/)__
-
-    ---
-
-    [2025.1](./2025.1/)
-    
--   __[![](./2024.1/2024.1.jpg){ .rounded-corners .width-full}](./2024.1/)__
-
-    ---
-
-    [2024.1](./2024.1/)
-
+    Learn what each component does and when to use it.
 
 </div>
 

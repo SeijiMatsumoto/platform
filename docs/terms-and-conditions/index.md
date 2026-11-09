@@ -13,7 +13,7 @@ Lectures follow an active learning format — pre-reading is expected. Each clas
 |---|---|
 | **Pre-reading** | Review assigned sections before each class |
 | **Engagement** | Ask questions, participate in discussions, help peers |
-| **Lab sessions** | Bring a laptop with the development environment configured (see [Prerequisites](../2026.2/hands-on/0/index.md)) |
+| **Lab sessions** | Bring a laptop with the development environment configured (see [Prerequisites](../2027.1/hands-on/0/index.md)) |
 
 ---
 

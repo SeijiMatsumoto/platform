@@ -12,7 +12,7 @@ As aulas seguem um formato de aprendizagem ativa — a leitura prévia é espera
 |---|---|
 | **Leitura prévia** | Revise as seções indicadas antes de cada aula |
 | **Engajamento** | Faça perguntas, participe das discussões, ajude os colegas |
-| **Aulas de laboratório** | Traga um notebook com o ambiente de desenvolvimento configurado (veja [Pré-requisitos](../2026.2/hands-on/0/index.md)) |
+| **Aulas de laboratório** | Traga um notebook com o ambiente de desenvolvimento configurado (veja [Pré-requisitos](../2027.1/hands-on/0/index.md)) |
 
 ---
 

@@ -1,38 +1,24 @@
-# [Plataformas, Microsserviços e APIs](#plataformas-microsservicos-e-apis)
+# System Design Playground
 
+Monte um sistema, aplique carga e explore seu comportamento. Comece por um cenário ou use o material de 2027.1 para aprender os componentes.
 
 <div class="grid cards" markdown>
 
--   __[![](./2026.2/2026.2.jpg){ .rounded-corners .width-full}](./2026.2/)__
+-   __[Abrir o Playground](playground/index.md)__
 
-    ---
+    Desenhe, simule e compare arquiteturas, incluindo oito cenários de sistemas de IA.
 
-    [2026.2](./2026.2/)
+-   __[Guia de cenários](playground/scenarios/index.md)__
 
--   __[![](./2026.1/2026.1.jpg){ .rounded-corners .width-full}](./2026.1/)__
+    Enunciados, metas de aceitação, dicas e projetos iniciais.
 
-    ---
+-   __[2027.1 Design de Sistemas](2027.1/index.md)__
 
-    [2026.1](./2026.1/)
+    Aulas, laboratórios, exercícios e prática de entrevistas.
 
--   __[![](./2025.2/2025.2.jpg){ .rounded-corners .width-full}](./2025.2/)__
+-   __[Referência de componentes](2027.1/reference/components/index.md)__
 
-    ---
-
-    [2025.2](./2025.2/)
-
--   __[![](./2025.1/2025.1.jpg){ .rounded-corners .width-full}](./2025.1/)__
-
-    ---
-
-    [2025.1](./2025.1/)
-    
--   __[![](./2024.1/2024.1.jpg){ .rounded-corners .width-full}](./2024.1/)__
-
-    ---
-
-    [2024.1](./2024.1/)
-
+    Aprenda o que cada componente faz e quando usá-lo.
 
 </div>
 

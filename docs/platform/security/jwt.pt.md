@@ -69,7 +69,7 @@ JWTs são amplamente usados no desenvolvimento web por sua simplicidade, flexibi
 
 ### Material adicional
 
-- [Spring Cloud Security](../../2026.2/hands-on/3/authorization/index.md)
+- [Spring Cloud Security](../../2027.1/hands-on/4/gateway/index.md)
 
 - :fontawesome-brands-youtube:{ .youtube } [ByteByteGo - Why is JWT popular?](https://www.youtube.com/watch?v=P2CPd9ynFLg){:target='_blank'}
 

@@ -107,9 +107,10 @@ slide with `<style>{{INCLUDE:scripts/slides/diagram.css}}</style>` (that file ha
 
 `docs/2027.1/` (the System Design edition) and `docs/playground/` (the System Design Playground
 simulator, edition-independent, at `/platform/playground/`) are published and listed in the nav.
-2026.2 is still the current edition, so 2027.1 is listed **inside the Appendix** as "2027.1 (preview)"
-(pt "2027.1 (prévia)"); its block sits between `# >>> 2027.1 nav` and `# <<< 2027.1 nav` in
-`zensical.toml`. When 2027.1 becomes current, move the block back to the top of the nav.
+This fork publishes 2027.1 as the current edition at the top level of navigation. Older
+2024–2026 editions are retained as source archives but excluded from the published site
+through `project.plugins.exclude.glob`. Do not add links to excluded editions from live pages.
+The 2027.1 block sits between `# >>> 2027.1 nav` and `# <<< 2027.1 nav` in `zensical.toml`.
 The simulator code is `docs/assets/javascripts/playground/*.js` +
 `assets/stylesheets/playground.css`; engine tests: `node scripts/playground/test_engine.mjs`.
 `SDP.catalogBase` in `catalog.js` sets where "Learn more" points (the edition's component catalog).
