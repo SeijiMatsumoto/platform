@@ -1,7 +1,8 @@
 name: ci
 on:
-  - push
-  - pull_request
+  push:
+  pull_request:
+  workflow_dispatch:
 
 env:
   CI: true
@@ -38,11 +39,9 @@ jobs:
         run: |
           uv run scripts/handouts/snapshots.py
           uv run zensical-i18n build --clean
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-pages-artifact@v4
         with:
-          name: site
           path: site/
-          if-no-files-found: error
           retention-days: 3
 
   deploy:
@@ -50,15 +49,13 @@ jobs:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: site
-          path: site/
-      - uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./site
-          force_orphan: true
+      - uses: actions/configure-pages@v5
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

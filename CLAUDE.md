@@ -28,7 +28,7 @@ uv run zensical-i18n serve --lang pt  # Preview Portuguese
 
 `zensical-i18n` wraps `zensical` (same options); plain `zensical build` still works but builds only one language.
 
-Zensical has no `gh-deploy`: CI builds `site/` and publishes it to the `gh-pages` branch. Unsupported MkDocs plugins are ignored silently, so check the generated HTML when adding a plugin.
+Zensical has no `gh-deploy`: CI builds `site/` and deploys a Pages artifact with `actions/deploy-pages`. Unsupported MkDocs plugins are ignored silently, so check the generated HTML when adding a plugin.
 
 `matplotlibrc` (project root) forces the `Agg` backend: Zensical renders pages on worker threads, where `markdown-exec` plots fail with GUI backends.
 
@@ -183,7 +183,7 @@ inside `!!! takeaways ""` (a highlighted box, styled in `extra.css`).
 
 ## CI/CD
 
-GitHub Actions (`.github/workflows/main.yaml`) triggers on every push and PR. Deployment to GitHub Pages runs only on pushes to `main`: `uv sync --frozen` then `uv run zensical-i18n build --clean` (both languages), then `peaceiris/actions-gh-pages` publishes `site/` to the `gh-pages` branch.
+GitHub Actions (`.github/workflows/main.yaml`) validates every push and PR (Node tests, content checks, handouts, and both language builds). Pushes to `main` and manual runs on `main` deploy the validated Pages artifact with `actions/deploy-pages`; PRs never deploy. Pages uses the GitHub Actions publishing source. This fork is published at `https://seijimatsumoto.github.io/platform/`.
 
 ## Content Patterns
 

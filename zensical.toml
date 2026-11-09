@@ -3,9 +3,9 @@
 [project]
 site_name = "Platforms, Microservices, DevOps and APIs"
 site_author = "Sandmann, H."
-site_url = "https://insper.github.io/platform"
-repo_url = "https://github.com/insper/platform"
-repo_name = "insper/platform"
+site_url = "https://seijimatsumoto.github.io/platform/"
+repo_url = "https://github.com/SeijiMatsumoto/platform"
+repo_name = "SeijiMatsumoto/platform"
 
 extra_css = [
   "assets/stylesheets/extra.css",

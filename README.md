@@ -31,4 +31,4 @@ uv run zensical-i18n build
 uv run zensical-i18n serve --lang pt
 ```
 
-A publicação no GitHub Pages é feita pelo CI a cada push na `main`: ele executa `uv sync --frozen` e `uv run zensical-i18n build --clean` (inglês em `site/`, português em `site/pt/`) e publica a pasta `site/` no branch `gh-pages`.
+A publicação no GitHub Pages é feita pelo CI a cada push na `main`: ele executa `uv sync --frozen` e `uv run zensical-i18n build --clean` (inglês em `site/`, português em `site/pt/`) e publica o artefato de `site/` diretamente no GitHub Pages. Pull requests executam as validações sem publicar. O site deste fork fica em https://seijimatsumoto.github.io/platform/ e o Playground em https://seijimatsumoto.github.io/platform/playground/.
