@@ -1,34 +1,35 @@
-## Setup
+# System Design Playground
 
-Para utilizar o código deste repositório, siga as instruções a seguir:
+A browser-based system design simulator and the 2027.1 course reference. The site is published in English.
 
-O projeto usa o [uv](https://docs.astral.sh/uv/) para gerenciar o Python e as dependências (`pyproject.toml` e `uv.lock`). Instale o uv uma vez:
+## Local development
 
-``` shell
-curl -LsSf https://astral.sh/uv/install.sh | sh    # ou: brew install uv
-```
+Python 3.12 and dependencies are managed with [uv](https://docs.astral.sh/uv/):
 
-Crie o ambiente (`.venv/`, com o Python 3.12 de `.python-version`) e instale as dependências travadas no `uv.lock`:
-
-``` shell
-uv sync
-```
-
-Não é preciso ativar o ambiente: rode os comandos com `uv run`. Para adicionar uma dependência, use `uv add <pacote>` (atualiza o `pyproject.toml` e o `uv.lock`).
-
-## Deployment
-
-O material utiliza o [Zensical](https://zensical.org/) para gerar a documentação (configuração em `zensical.toml`). Para visualizar a documentação, execute o comando:
-
-``` shell
+```sh
+uv sync --frozen
 uv run zensical-i18n serve
 ```
 
-O site tem dois idiomas, gerados pelo [zensical-i18n](https://github.com/hsandmann/zensical-i18n): inglês (padrão) e português do Brasil. Cada página `X.md` pode ter a tradução `X.pt.md` ao lado. Para gerar os dois idiomas e para visualizar a versão em português:
+Open http://127.0.0.1:8000/platform/playground/.
 
-``` shell
-uv run zensical-i18n build
-uv run zensical-i18n serve --lang pt
+For the standalone JavaScript playground without a site build:
+
+```sh
+python3 -m http.server 8765
 ```
 
-A publicação no GitHub Pages é feita pelo CI a cada push na `main`: ele executa `uv sync --frozen` e `uv run zensical-i18n build --clean` (inglês em `site/`, português em `site/pt/`) e publica o artefato de `site/` diretamente no GitHub Pages. Pull requests executam as validações sem publicar. O site deste fork fica em https://seijimatsumoto.github.io/platform/ e o Playground em https://seijimatsumoto.github.io/platform/playground/.
+Open http://localhost:8765/scripts/playground/harness.html.
+
+## Build and deployment
+
+```sh
+uv run zensical-i18n build --clean
+```
+
+GitHub Actions runs the tests and content checks on pushes and pull requests. Validated builds on `main` deploy to GitHub Pages; pull requests do not deploy.
+
+- Site: https://seijimatsumoto.github.io/platform/
+- Playground: https://seijimatsumoto.github.io/platform/playground/
+
+The build publishes 2027.1 and shared app/reference content. Older editions and Portuguese sources remain archived in the repository and are excluded from publication. English changes do not require Portuguese translations.

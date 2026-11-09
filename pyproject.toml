@@ -1,7 +1,7 @@
 [project]
 name = "platform"
 version = "2027.1"
-description = "Course site of Insper's System Architecture course (Zensical, two languages)"
+description = "Course site of Insper's System Architecture course (Zensical, English)"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

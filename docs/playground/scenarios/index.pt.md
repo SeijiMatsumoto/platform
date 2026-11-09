@@ -56,7 +56,7 @@ Cada cenário do [System Design Playground](../index.md) é um pequeno laborató
 | [Busca de posts: indexe de forma assíncrona](#post-search) | A indexação sai do caminho de escrita por um log e indexadores em lote; consultas repetidas vão para cache |
 | [Comentários ao vivo: um milhão de espectadores consultando](#live-comments) | Consultas idênticas são respondidas na borda; comentários novos são empurrados via pub/sub |
 | [Resumo com IA: o prompt é grande demais](#ai-summarizer) | Cada chamada exige tokens do trecho + saída reservada <= limite de contexto. Observe chamadas agregadas e a cota. |
-| [Assistente FAQ: pare de enviar o manual inteiro](#ai-faq) | Recall e suporte das citações são verificações distintas. Poucas seções perdem fatos; recuperar tudo desperdiça tokens. |
+| [Assistente FAQ: pare de enviar o manual inteiro](#ai-faq) | O recall conta seções esperadas recuperadas. A cobertura das fontes esperadas também exige evidências e penaliza responder perguntas sem resposta. Nenhuma verifica o texto gerado. |
 | [Assistente de pedidos: use uma ferramenta para fatos atuais](#ai-order-status) | Só resultados válidos podem virar respostas sobre estado. Limite tentativas e informe indisponibilidade. |
 | [Ingestão de documentos: o índice fica para trás](#ai-ingestion) | Use IDs estáveis para indexação idempotente e persista progresso; repetir etapa interrompida deve ser seguro. |
 | [Busca empresarial: a resposta cruza o limite do tenant](#ai-tenant-search) | Isole caches por tenant, usuário e versão de permissão; limite TTL de permissões. Meça a busca separada da geração. |
@@ -795,9 +795,9 @@ Resuma transcrições a 20 req/s: 90% têm 3.000 tokens, 10% têm 100.000. O mod
 Responda perguntas de funcionários a partir de um manual de 500 páginas. Hoje cada pedido envia 100.000 tokens do manual. Recupere seções relevantes, cite evidências e abstenha-se sem resposta. O fixture tem 80 perguntas respondíveis e 20 sem resposta; cada resposta exige três seções.
 
 - **Design inicial:** users → AI API; AI API → model.
-- **Critérios de aceitação:** `aiRetrievalRecall` >= 90% · `aiSupportedClaims` >= 95% · `aiAbstention` >= 90% · `aiTokenReduction` >= 80%.
+- **Critérios de aceitação:** `aiRetrievalRecall` >= 90% · Cobertura das fontes esperadas >= 95% · `aiAbstention` >= 90% · `aiTokenReduction` >= 80%.
 - **Experimente:** Adicione Memory Fabric conectado a Vector DB. Selecione Memory Fabric para ajustar seções, evidência e abstenção.
-- **Observe:** Recall e suporte das citações são verificações distintas. Poucas seções perdem fatos; recuperar tudo desperdiça tokens.
+- **Observe:** O recall conta seções esperadas recuperadas. A cobertura das fontes esperadas também exige evidências e penaliza responder perguntas sem resposta. Nenhuma verifica o texto gerado.
 
 <div class="sdp" data-scenario="ai-faq" data-mode="compact" data-height="420"></div>
 

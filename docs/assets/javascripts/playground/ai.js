@@ -135,7 +135,7 @@
       if (kind === "faq") {
         value("aiRetrievalRecall", rate(retrieved, 80 * 3)); value("aiSupportedClaims", rate(supported, claims));
         value("aiAbstention", rate(abstained, 20)); value("aiTokenReduction", memory && vector ? 100 * (1 - ((mp.aiTopK || 1) * 500 + 1000) / 100000) : 0);
-        note("100 questions: 80 require three labeled 500-token sections; 20 have no answer. Claims require retrieved source IDs. Baseline: 100,000 handbook tokens; query overhead: 1,000.", "100 perguntas: 80 exigem três seções rotuladas de 500 tokens; 20 não têm resposta. Afirmações exigem IDs recuperados. Base: 100.000 tokens do manual; overhead: 1.000.");
+        note("100 questions: 80 require three labeled 500-token sections; 20 have no answer. Expected source coverage counts matching source IDs with source evidence enabled; it does not evaluate generated text. Baseline: 100,000 handbook tokens; query overhead: 1,000.", "100 perguntas: 80 exigem três seções rotuladas de 500 tokens; 20 não têm resposta. A cobertura das fontes esperadas conta IDs correspondentes com evidências ativadas; não avalia texto gerado. Base: 100.000 tokens do manual; overhead: 1.000.");
       } else {
         // A query at t=60 revokes an ACL cached at t=59; probes every second.
         revoke = mp.aiTenantFilter ? Math.max(0, (mp.aiPermissionTtl || 0) - 1) : 1e9;

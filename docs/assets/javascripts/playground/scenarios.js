@@ -1260,7 +1260,7 @@
     goals: [G("aiRetrievalRecall", ">=", 90), G("aiSupportedClaims", ">=", 95), G("aiAbstention", ">=", 90), G("aiTokenReduction", ">=", 80)],
     hints: [
       T("Add Memory Fabric connected to a Vector DB. Select Memory Fabric to change retrieved sections, source evidence and abstention.", "Adicione Memory Fabric conectado a Vector DB. Selecione Memory Fabric para ajustar seções, evidência e abstenção."),
-      T("Retrieval recall and citation support are separate checks. Retrieving too little loses facts; retrieving everything defeats the token budget.", "Recall e suporte das citações são verificações distintas. Poucas seções perdem fatos; recuperar tudo desperdiça tokens.")
+      T("Retrieval recall counts expected sections found. Expected source coverage also requires source evidence and penalizes answering unanswerable questions. Neither checks generated answer text.", "O recall conta seções esperadas recuperadas. A cobertura das fontes esperadas também exige evidências e penaliza responder perguntas sem resposta. Nenhuma verifica o texto gerado.")
     ],
     aiControls: ["aiTopK", "aiCitations", "aiAbstain"]
   });

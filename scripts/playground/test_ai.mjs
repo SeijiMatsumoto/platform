@@ -17,12 +17,12 @@ function replay(id, mutate = () => {}, initial = false) {
 function node(d, id) { return d.nodes.find(n => n.id === id); }
 function disconnect(d, id) { d.edges = d.edges.filter(e => e.to !== id); }
 const ids = ["ai-summarizer", "ai-faq", "ai-order-status", "ai-ingestion", "ai-tenant-search", "ai-research", "ai-refunds", "ai-model-routing"];
-test("eight bilingual AI scenarios in the intended progression", () => {
+test("eight English AI scenarios in the intended progression", () => {
   assert.deepEqual(SC.LIST.filter(s => s.group === "ai").map(s => s.id), ids);
   for (const id of ids) {
     const s = SC.get(id);
-    assert.ok(s.title.en && s.title.pt && s.brief.en && s.brief.pt);
-    for (const hint of s.hints) assert.ok(hint.en && hint.pt);
+    assert.ok(s.title.en && s.brief.en);
+    for (const hint of s.hints) assert.ok(hint.en);
     for (const initial of [false, true]) {
       const m = replay(id, undefined, initial);
       Object.values(m).forEach(n => assert.ok(Number.isFinite(n)));
@@ -39,7 +39,7 @@ test("summary limits include reserved output; truncation cannot preserve missing
   assert.ok(replay(ids[0], d => node(d, "llm").params.quota = 1).aiShortP95 > 10);
   assert.ok(replay(ids[0], d => node(d, "api").params.aiAsync = false).aiLongP99 > 120);
 });
-test("FAQ source recall, citation support and no-answer behavior are independent", () => {
+test("FAQ source recall, expected source coverage and no-answer behavior are independent", () => {
   assert.ok(replay(ids[1], d => node(d, "memory").params.aiTopK = 1).aiRetrievalRecall < 90);
   assert.equal(replay(ids[1], d => node(d, "memory").params.aiCitations = false).aiSupportedClaims, 0);
   assert.equal(replay(ids[1], d => node(d, "memory").params.aiAbstain = false).aiAbstention, 0);
@@ -108,12 +108,12 @@ test("zero traffic and excluding filters cannot pass the AI fixtures", () => {
   d.edges.find(e => e.to === "index").params.ratio = 0;
   assert.equal(AI.evaluate(d, sc, sc.settings).metrics.aiRetrievalRecall, 0);
 });
-test("failed checks carry bounded bilingual witness cases; passing solutions do not", () => {
+test("failed checks carry bounded English witness cases; passing solutions do not", () => {
   for (const id of ids) {
     const sc = SC.get(id);
     const result = AI.evaluate(E.normalizeDesign(sc.design), sc, sc.settings);
     assert.ok(result.failures.length, id + " has no failure explanation");
-    for (const f of result.failures) assert.ok(f.caseId && f.en && f.pt && f.metric);
+    for (const f of result.failures) assert.ok(f.caseId && f.en && f.metric);
     assert.equal(AI.evaluate(E.normalizeDesign(sc.solution), sc, sc.settings).failures.length, 0);
   }
   const sc = SC.get("ai-refunds"), result = AI.evaluate(E.normalizeDesign(sc.design), sc, sc.settings);

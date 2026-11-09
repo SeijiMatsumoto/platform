@@ -7,7 +7,7 @@
 <!-- Standalone test page for the System Design Playground (no site build needed):
        python3 -m http.server 8765        (from the repository root)
        open http://localhost:8765/scripts/playground/harness.html
-     ?lang=pt switches the interface to Portuguese; the "dark" button toggles the slate palette. -->
+     The "dark" button toggles the slate palette. -->
 <script>
   /* cache-busting loader: always the files on disk */
   var V = "?v=" + Date.now();
@@ -35,7 +35,6 @@
   <div class="sdp" data-scenario="cascading-failure" data-mode="compact" data-height="420"></div>
 </main>
 <script>
-  if (/[?&]lang=pt/.test(location.search)) document.documentElement.lang = "pt";
   document.getElementById("theme").onclick = function () {
     var b = document.body; b.setAttribute("data-md-color-scheme", b.getAttribute("data-md-color-scheme") === "slate" ? "default" : "slate");
   };

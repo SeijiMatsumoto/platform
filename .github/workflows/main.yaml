@@ -33,9 +33,8 @@ jobs:
           node scripts/csim/test.mjs
           node scripts/diagram/test.mjs
           node scripts/support/validate.mjs
-          uv run scripts/i18n/check.py
           uv run scripts/handouts/snapshots.py --check
-      - name: Generate handouts and build both languages
+      - name: Generate handouts and build English site
         run: |
           uv run scripts/handouts/snapshots.py
           uv run zensical-i18n build --clean

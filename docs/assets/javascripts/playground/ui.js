@@ -137,7 +137,7 @@
     aiLongP99: [{"en": "async long-job p99", "pt": "p99 de jobs longos assíncronos"}, "s"],
     aiFactRecall: [{"en": "labeled fact recall", "pt": "recall de fatos rotulados"}, "%"],
     aiRetrievalRecall: [{"en": "source recall@k", "pt": "recall de fontes@k"}, "%"],
-    aiSupportedClaims: [{"en": "supported fixture claims", "pt": "afirmações sustentadas do fixture"}, "%"],
+    aiSupportedClaims: [{"en": "Expected source coverage", "pt": "Cobertura das fontes esperadas"}, "%"],
     aiAbstention: [{"en": "correct abstention", "pt": "abstenção correta"}, "%"],
     aiTokenReduction: [{"en": "input token reduction", "pt": "redução de tokens de entrada"}, "%"],
     aiWrongStatus: [{"en": "incorrect / incomplete order answers", "pt": "respostas de pedidos incorretas / incompletas"}, ""],

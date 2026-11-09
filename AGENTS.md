@@ -2,16 +2,15 @@
 
 ## Project Structure & Module Organization
 
-This repository publishes Insper’s bilingual Platforms/System Architecture course using Zensical. Course content lives in `docs/`, including edition directories (`2026.2/`, `2027.1/`), shared references in `appendix/`, and the simulator in `playground/`. Browser scripts, styles, and images live under `docs/assets/`. Validation, simulator tests, slide tooling, and lab snapshot generation live in `scripts/`. `zensical.toml` defines navigation and site configuration; `pyproject.toml` and `uv.lock` manage Python dependencies. Treat `site/` as generated output.
+This repository publishes an English-only fork of Insper’s Platforms/System Architecture course using Zensical. Course content lives in `docs/`, including edition directories (`2026.2/`, `2027.1/`), shared references in `appendix/`, and the simulator in `playground/`. Browser scripts, styles, and images live under `docs/assets/`. Validation, simulator tests, slide tooling, and lab snapshot generation live in `scripts/`. `zensical.toml` defines navigation and site configuration; `pyproject.toml` and `uv.lock` manage Python dependencies. Treat `site/` as generated output.
 
 ## Build, Test, and Development Commands
 
 Use Python 3.12 and uv; use `uv add <package>` for dependencies, never pip.
 
 - `uv sync --frozen`: install locked dependencies.
-- `uv run zensical-i18n serve`: preview English locally; append `--lang pt` for Portuguese.
-- `uv run zensical-i18n build --clean`: build both languages.
-- `uv run scripts/i18n/check.py [folder]`: check translation structure and code parity.
+- `uv run zensical-i18n serve`: preview the English site locally.
+- `uv run zensical-i18n build --clean`: build the English site.
 - `node scripts/csim/test.mjs [names]`: run all concept-model tests or selected simulators.
 - `node scripts/playground/test_engine.mjs`: test the Playground engine.
 - `node scripts/diagram/test.mjs`: validate 2027.1 diagram syntax.
@@ -19,7 +18,7 @@ Use Python 3.12 and uv; use `uv add <package>` for dependencies, never pip.
 
 ## Coding Style & Naming Conventions
 
-Match surrounding files: JavaScript generally uses two-space indentation; Python uses four spaces. No repository-wide formatter or linter is configured. Use descriptive, hyphenated content filenames. Update English pages and their adjacent `.pt.md` translations together; keep translated links pointing to English filenames. Register new navigation entries and translated titles in `zensical.toml`.
+Match surrounding files: JavaScript generally uses two-space indentation; Python uses four spaces. No repository-wide formatter or linter is configured. Use descriptive, hyphenated content filenames. Maintain English content only; archived `.pt.*` translations do not need updates. Register new navigation entries in `zensical.toml`.
 
 Use theme tokens for simulator colors. Edit slide `.src.md` sources, then regenerate committed HTML with `uv run scripts/slides/build.py`; never hand-edit generated slides or `site/`.
 

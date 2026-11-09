@@ -56,7 +56,7 @@ Every scenario of the [System Design Playground](../index.md) is a small lab: a 
 | [Post search: index asynchronously](#post-search) | Indexing leaves the write path through a log and bulk indexers; repeated queries are cached |
 | [Live comments: a million viewers polling](#live-comments) | Identical polls are answered at the edge; new comments are pushed through pub/sub |
 | [AI summarizer: the prompt is too large](#ai-summarizer) | Each call needs chunk tokens + reserved output tokens <= context limit. Watch aggregate model calls against quota. |
-| [FAQ assistant: stop sending the whole handbook](#ai-faq) | Retrieval recall and citation support are separate checks. Retrieving too little loses facts; retrieving everything defeats the token budget. |
+| [FAQ assistant: stop sending the whole handbook](#ai-faq) | Retrieval recall counts expected sections found. Expected source coverage also requires source evidence and penalizes answering unanswerable questions. Neither checks generated answer text. |
 | [Order-status assistant: use a tool for live facts](#ai-order-status) | Only successful tool results may become status answers. Bound attempts and explicitly report unavailability. |
 | [Document ingestion: the index falls behind](#ai-ingestion) | Use stable chunk IDs for idempotent indexing and persist progress; replaying an unfinished step must be safe. |
 | [Enterprise search: the answer crosses a tenant boundary](#ai-tenant-search) | Scope answer caches by tenant, user and permission version; bound permission-cache TTL. Measure retrieval separately from generation latency. |
@@ -795,9 +795,9 @@ Summarize transcripts at 20 requests/s: 90% have 3,000 tokens, 10% have 100,000.
 Answer employee questions from a 500-page handbook. Today every request sends 100,000 handbook tokens. Retrieve the relevant sections, cite evidence, and abstain when there is no answer. The fixture has 80 answerable and 20 unanswerable questions; each answer needs three source sections.
 
 - **Initial design:** users → AI API; AI API → model.
-- **Acceptance checks:** `aiRetrievalRecall` >= 90% · `aiSupportedClaims` >= 95% · `aiAbstention` >= 90% · `aiTokenReduction` >= 80%.
+- **Acceptance checks:** `aiRetrievalRecall` >= 90% · Expected source coverage >= 95% · `aiAbstention` >= 90% · `aiTokenReduction` >= 80%.
 - **Try:** Add Memory Fabric connected to a Vector DB. Select Memory Fabric to change retrieved sections, source evidence and abstention.
-- **Observe:** Retrieval recall and citation support are separate checks. Retrieving too little loses facts; retrieving everything defeats the token budget.
+- **Observe:** Retrieval recall counts expected sections found. Expected source coverage also requires source evidence and penalizes answering unanswerable questions. Neither checks generated answer text.
 
 <div class="sdp" data-scenario="ai-faq" data-mode="compact" data-height="420"></div>
 

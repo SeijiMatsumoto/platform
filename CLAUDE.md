@@ -21,9 +21,8 @@ No activation needed: prefix commands with `uv run`.
 ## Common Commands
 
 ```bash
-uv run zensical-i18n build            # Build both languages into site/ (English) and site/pt/
+uv run zensical-i18n build            # Build the English site into site/
 uv run zensical-i18n serve            # Preview English at http://127.0.0.1:8000/platform/ (live reload)
-uv run zensical-i18n serve --lang pt  # Preview Portuguese
 ```
 
 `zensical-i18n` wraps `zensical` (same options); plain `zensical build` still works but builds only one language.
@@ -52,27 +51,13 @@ This is a documentation repository — no application code, no tests.
 
 No git-based revision dates/authors: Zensical does not support the `git-*` plugins.
 
-### Two languages: English (default) and Brazilian Portuguese
+### English-only publication
 
-Built by [zensical-i18n](https://github.com/hsandmann/zensical-i18n) (`[project.plugins.i18n]` in
-`zensical.toml`, suffix structure, as mkdocs-static-i18n). Every page `X.md` (English) may have a
-translation `X.pt.md` next to it — any file works the same way: `slides/x.pt.html` is the Portuguese
-version of `slides/x.html`. So never name a support file `x.pt.js` (or any `*.pt.*`) unless it *replaces*
-`x.js` in `/pt/`: data that only adds Portuguese texts uses `-pt` (`mapa-arq-dados-pt.js`). English is built to the site root and Portuguese to `/pt/`, sharing paths
-(`/platform/<page>` ↔ `/platform/pt/<page>`); the plugin adds the language selector (it keeps the page),
-hreflang sitemaps, translated default admonition titles, and a notice on pages that fall back to English.
-
-When translating: links, snippet includes and image paths keep the English file names, with no suffix
-(`cap/index.md`, `slides/x.html`) — the plugin resolves them per language; code blocks stay identical
-(only Mermaid labels are translated). A snippet is read from the repository, not resolved per language,
-so a translated included file needs its own path (e.g. `cap-venn.pt.svg`). Decks: `slides/<slug>.pt.src.md`
-builds `slides/<slug>.pt.html`. **When you change an English page, update its `.pt.md` too.** A new menu
-title needs an entry in `[project.plugins.i18n.languages.nav_translations]`. Scripts with interface text
-(`mermaid-sim.js`, `interview.js`) pick the language from `<html lang>`.
-
-```bash
-uv run scripts/i18n/check.py [folder]    # each .pt.md has the English structure and identical code
-```
+This fork publishes and maintains English only. Keep using `zensical-i18n` so archived
+`.pt.*` files are recognized and omitted from the English build. Portuguese is registered
+with `build = false`; no `/pt/` site or language selector is published. Existing Portuguese
+source files and JavaScript strings are archives; do not add or synchronize translations
+unless the user requests them. Translation parity checks are not a contribution requirement.
 
 ### Slides (Marp), 2026.2
 
@@ -147,9 +132,7 @@ Network simulators (class 12): `<div class="netsim" data-tool="cidr" data-cidr="
 `<div class="netsim" data-tool="packet" data-scenario="…">` (packet walk through the BoxOffice VPC: route tables,
 NAT, security groups), in `docs/assets/javascripts/netsim.js` + `assets/stylesheets/netsim.css`; the engine is
 pure and tested with `node scripts/playground/test_netsim.mjs`. Support data (concept map, study cards):
-`node scripts/support/validate.mjs`; their Portuguese texts are in `mapa-arq-dados-pt.js` and `cartas-arq-dados-pt.js`
-(overlaid on a copy of the English data; the validator fails when a concept, connection, trail or card has no
-translation, or when a support page states counts that the data no longer have).
+`node scripts/support/validate.mjs` validates English data and page counts. Portuguese support datasets are archived and do not need updates.
 
 Concept simulators (2027.1 and the appendix): `<div class="csim" data-sim="<name>" data-…="…"></div>`, followed by a
 `!!! tip "Try it"` (pt `"Experimente"`) whose numbers come from the model. `docs/assets/javascripts/csim/core.js`
@@ -165,11 +148,11 @@ takes from a lab (a TTL, partitions, breaker thresholds, the HPA…) is register
 (the value, the lab file the tip cites, and how to read it there) and lives in the module only as `LAB.<key>`
 (exported; defaults and model read it from there, no second literal). A fact the tip merely quotes (`ack-mode: record`)
 is registered with `module: false`. The tests take those inputs from `M.LAB` and assert every model number the tip
-prints with `tipHas(sim, lang => […])` (lib.mjs, both languages). `lab-values.test.mjs` fails when a lab file no
+prints with `tipHas(sim, lang => […])` (lib.mjs, English only). `lab-values.test.mjs` fails when a lab file no
 longer gives the registered value, when a module's `LAB` or a page's `data-*` differs, when a quoted fact leaves
 the tip, or when `LAB` holds an unregistered key. So: **when you change a lab setting** that a simulator uses,
 update the registry entry and `LAB`, run `node scripts/csim/test.mjs <sim>`, and rewrite the tip numbers it
-reports (en and pt); **when you write a simulator that uses a lab value**, register it the same way.
+reports (English only); **when you write a simulator that uses a lab value**, register it the same way.
 
 Quiz pages (2026.2, 2027.1 and `appendix/network/quiz.md`) keep plain Markdown (**Qn.** question, `- A.` … options, `??? success "Answer"` / `"Resposta"`
 whose first bold starts with the letter); `assets/javascripts/quiz.js` turns each `##` section into one compact quiz box (the AI course's layout: numbered rows, lettered
@@ -184,7 +167,7 @@ inside `!!! takeaways ""` (a highlighted box, styled in `extra.css`).
 
 ## CI/CD
 
-GitHub Actions (`.github/workflows/main.yaml`) validates every push and PR (Node tests, content checks, handouts, and both language builds). Pushes to `main` and manual runs on `main` deploy the validated Pages artifact with `actions/deploy-pages`; PRs never deploy. Pages uses the GitHub Actions publishing source. This fork is published at `https://seijimatsumoto.github.io/platform/`.
+GitHub Actions (`.github/workflows/main.yaml`) validates every push and PR (Node tests, content checks, handouts, and the English build). Pushes to `main` and manual runs on `main` deploy the validated Pages artifact with `actions/deploy-pages`; PRs never deploy. Pages uses the GitHub Actions publishing source. This fork is published at `https://seijimatsumoto.github.io/platform/`.
 
 ## Content Patterns
 
