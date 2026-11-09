@@ -142,7 +142,37 @@
 
   function merge(a, b) { var o = {}, k; for (k in a) o[k] = a[k]; for (k in b) o[k] = b[k]; return o; }
 
+  /* Explicit controls for the AI teaching fixtures; never estimates of real model quality. */
+  PARAMS.aiChunkTokens = P("int", { en: "Chunk size (tokens, 0 = whole input)", pt: "Tamanho do trecho (tokens, 0 = entrada inteira)" }, { en: "Used by the deterministic AI fixture checks at the end of a run.", pt: "Usado pelas verificações determinísticas de IA ao final da execução." }, { min: 0, max: 100000, step: 1 });
+  PARAMS.aiOutputTokens = P("int", { en: "Reserved output tokens", pt: "Tokens reservados para saída" }, { en: "Used by the deterministic AI fixture checks at the end of a run.", pt: "Usado pelas verificações determinísticas de IA ao final da execução." }, { min: 100, max: 16000, step: 1 });
+  PARAMS.aiContextTokens = P("int", { en: "Context limit (tokens)", pt: "Limite de contexto (tokens)" }, { en: "Used by the deterministic AI fixture checks at the end of a run.", pt: "Usado pelas verificações determinísticas de IA ao final da execução." }, { min: 1000, max: 200000, step: 1 });
+  PARAMS.aiAsync = P("bool", { en: "Background job acknowledgement", pt: "Confirmação de job em segundo plano" }, { en: "Used by the deterministic AI fixture checks at the end of a run.", pt: "Usado pelas verificações determinísticas de IA ao final da execução." });
+  PARAMS.aiTopK = P("int", { en: "Retrieved sections", pt: "Seções recuperadas" }, { en: "Used by the deterministic AI fixture checks at the end of a run.", pt: "Usado pelas verificações determinísticas de IA ao final da execução." }, { min: 1, max: 20, step: 1 });
+  PARAMS.aiCitations = P("bool", { en: "Require source evidence", pt: "Exigir evidência da fonte" }, { en: "Used by the deterministic AI fixture checks at the end of a run.", pt: "Usado pelas verificações determinísticas de IA ao final da execução." });
+  PARAMS.aiAbstain = P("bool", { en: "Abstain without evidence", pt: "Abster-se sem evidência" }, { en: "Used by the deterministic AI fixture checks at the end of a run.", pt: "Usado pelas verificações determinísticas de IA ao final da execução." });
+  PARAMS.aiAuthorize = P("bool", { en: "Enforce user permissions", pt: "Aplicar permissões do usuário" }, { en: "Used by the deterministic AI fixture checks at the end of a run.", pt: "Usado pelas verificações determinísticas de IA ao final da execução." });
+  PARAMS.aiValidate = P("bool", { en: "Validate tool arguments / output schema", pt: "Validar argumentos / esquema de saída" }, { en: "Used by the deterministic AI fixture checks at the end of a run.", pt: "Usado pelas verificações determinísticas de IA ao final da execução." });
+  PARAMS.aiEvidence = P("bool", { en: "Answer only from successful tool results", pt: "Responder apenas com resultados válidos de ferramentas" }, { en: "Used by the deterministic AI fixture checks at the end of a run.", pt: "Usado pelas verificações determinísticas de IA ao final da execução." });
+  PARAMS.aiAttempts = P("int", { en: "Maximum tool attempts", pt: "Máximo de tentativas da ferramenta" }, { en: "Used by the deterministic AI fixture checks at the end of a run.", pt: "Usado pelas verificações determinísticas de IA ao final da execução." }, { min: 1, max: 10, step: 1 });
+  PARAMS.aiTenantFilter = P("bool", { en: "Filter retrieval by tenant and ACL", pt: "Filtrar busca por tenant e ACL" }, { en: "Used by the deterministic AI fixture checks at the end of a run.", pt: "Usado pelas verificações determinísticas de IA ao final da execução." });
+  PARAMS.aiPermissionTtl = P("int", { en: "Permission cache TTL (s)", pt: "TTL do cache de permissões (s)" }, { en: "Used by the deterministic AI fixture checks at the end of a run.", pt: "Usado pelas verificações determinísticas de IA ao final da execução." }, { min: 0, max: 300, step: 1 });
+  PARAMS.aiScopedCache = P("bool", { en: "Key cache by tenant, user and permission version", pt: "Chave de cache por tenant, usuário e versão de permissão" }, { en: "Used by the deterministic AI fixture checks at the end of a run.", pt: "Usado pelas verificações determinísticas de IA ao final da execução." });
+  PARAMS.aiCheckpoint = P("bool", { en: "Persist completed steps", pt: "Persistir etapas concluídas" }, { en: "Used by the deterministic AI fixture checks at the end of a run.", pt: "Usado pelas verificações determinísticas de IA ao final da execução." });
+  PARAMS.aiMaxCalls = P("int", { en: "Model calls per job", pt: "Chamadas ao modelo por job" }, { en: "Used by the deterministic AI fixture checks at the end of a run.", pt: "Usado pelas verificações determinísticas de IA ao final da execução." }, { min: 1, max: 30, step: 1 });
+  PARAMS.aiMaxFetches = P("int", { en: "Source fetches per job", pt: "Buscas de fontes por job" }, { en: "Used by the deterministic AI fixture checks at the end of a run.", pt: "Usado pelas verificações determinísticas de IA ao final da execução." }, { min: 1, max: 50, step: 1 });
+  PARAMS.aiIdempotent = P("bool", { en: "Stable operation ID and deduplication", pt: "ID estável e deduplicação da operação" }, { en: "Used by the deterministic AI fixture checks at the end of a run.", pt: "Usado pelas verificações determinísticas de IA ao final da execução." });
+  PARAMS.aiReconcileS = P("int", { en: "Reconcile uncertain actions every (s)", pt: "Reconciliar ações incertas a cada (s)" }, { en: "Used by the deterministic AI fixture checks at the end of a run.", pt: "Usado pelas verificações determinísticas de IA ao final da execução." }, { min: 1, max: 600, step: 1 });
+  PARAMS.aiRoute = P("bool", { en: "Route easy tickets to the small model", pt: "Rotear tickets simples para o modelo pequeno" }, { en: "Used by the deterministic AI fixture checks at the end of a run.", pt: "Usado pelas verificações determinísticas de IA ao final da execução." });
+  PARAMS.aiEscalate = P("bool", { en: "Escalate uncertain classifications", pt: "Escalar classificações incertas" }, { en: "Used by the deterministic AI fixture checks at the end of a run.", pt: "Usado pelas verificações determinísticas de IA ao final da execução." });
+
+  var AI_KEYS = {"app": ["aiChunkTokens", "aiOutputTokens", "aiAsync"], "worker": ["aiChunkTokens", "aiAsync", "aiIdempotent", "aiCheckpoint"], "llmgw": ["aiContextTokens", "aiRoute", "aiEscalate", "aiValidate"], "memory": ["aiTopK", "aiCitations", "aiAbstain", "aiTenantFilter", "aiPermissionTtl"], "toolreg": ["aiAuthorize", "aiValidate", "aiEvidence", "aiAttempts", "aiIdempotent", "aiReconcileS"], "cache": ["aiScopedCache"], "orchestrator": ["aiCheckpoint", "aiMaxCalls", "aiMaxFetches"]};
+  var AI_DEFAULTS = {"aiChunkTokens": 0, "aiOutputTokens": 1000, "aiContextTokens": 16000, "aiAsync": false, "aiTopK": 1, "aiCitations": false, "aiAbstain": false, "aiAuthorize": false, "aiValidate": false, "aiEvidence": false, "aiAttempts": 5, "aiTenantFilter": false, "aiPermissionTtl": 120, "aiScopedCache": false, "aiCheckpoint": false, "aiMaxCalls": 20, "aiMaxFetches": 40, "aiIdempotent": false, "aiReconcileS": 300, "aiRoute": false, "aiEscalate": false};
+
   function C(id, cat, label, role, d, params, desc, numbers, glyph) {
+    (AI_KEYS[id] || []).forEach(function (key) {
+      params = params.concat([key]);
+      d[key] = AI_DEFAULTS[key];
+    });
     return { id: id, cat: cat, label: label, role: role, d: d, params: params, desc: desc, numbers: numbers, glyph: glyph };
   }
 

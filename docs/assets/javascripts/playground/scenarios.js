@@ -1010,6 +1010,294 @@
     solution: derive(dc, { set: [["cache", { replicas: 50 }]] })
   });
 
+  /* AI systems: fundamentals before ingestion, isolation, recovery and routing. */
+  add({
+    id: "ai-summarizer",
+    group: "ai",
+    aiKind: "summarizer",
+    title: T("AI summarizer: the prompt is too large",
+      "Resumo com IA: o prompt é grande demais"),
+    brief: T("Summarize transcripts at 20 requests/s: 90% have 3,000 tokens, 10% have 100,000. The model has a 16,000-token context limit, including output. Today each transcript is one synchronous call. Preserve the twenty labeled decisions, reserve output space, and acknowledge long jobs asynchronously. Short p95 <10 s; long p99 <120 s.",
+      "Resuma transcrições a 20 req/s: 90% têm 3.000 tokens, 10% têm 100.000. O modelo aceita 16.000 tokens, incluindo a saída. Hoje cada transcrição vira uma chamada síncrona. Preserve as vinte decisões rotuladas, reserve espaço para saída e confirme jobs longos de forma assíncrona. p95 curto <10 s; p99 longo <120 s."),
+    settings: {"profile": "load", "targetRps": 20, "readRatio": 1, "seed": 311, "chaos": "off"},
+    duration: 180,
+    design: D([
+      N("users", "client", 60, 180, "users", {"timeoutMs": 120000}),
+      N("api", "app", 260, 180, "AI API", {"threads": 2000}),
+      N("llm", "llmgw", 720, 180, "model", {"quota": 1000})
+    ], [
+      E("users", "api"), E("api", "llm")
+    ]),
+    solution: D([
+      N("users", "client", 60, 180, "users", {"timeoutMs": 120000}),
+      N("api", "app", 260, 180, "AI API", {"threads": 2000, "aiChunkTokens": 8000, "aiAsync": true}),
+      N("llm", "llmgw", 720, 180, "model", {"quota": 150})
+    ], [
+      E("users", "api"), E("api", "llm")
+    ]),
+    goals: [G("aiContextErrors", "<=", 0), G("aiShortP95", "<", 10), G("aiLongP99", "<", 120), G("aiFactRecall", ">=", 90)],
+    hints: [
+      T("Select AI API: split long inputs into chunks and enable background acknowledgement. A larger context is an alternative, with different cost.", "Selecione AI API: divida entradas longas em trechos e ative confirmação em segundo plano. Um contexto maior é alternativa, com outro custo."),
+      T("Each call needs chunk tokens + reserved output tokens <= context limit. Watch aggregate model calls against quota.", "Cada chamada exige tokens do trecho + saída reservada <= limite de contexto. Observe chamadas agregadas e a cota.")
+    ],
+    aiControls: ["aiChunkTokens", "aiOutputTokens", "aiAsync", "aiContextTokens"]
+  });
+
+  add({
+    id: "ai-faq",
+    group: "ai",
+    aiKind: "faq",
+    title: T("FAQ assistant: stop sending the whole handbook",
+      "Assistente FAQ: pare de enviar o manual inteiro"),
+    brief: T("Answer employee questions from a 500-page handbook. Today every request sends 100,000 handbook tokens. Retrieve the relevant sections, cite evidence, and abstain when there is no answer. The fixture has 80 answerable and 20 unanswerable questions; each answer needs three source sections.",
+      "Responda perguntas de funcionários a partir de um manual de 500 páginas. Hoje cada pedido envia 100.000 tokens do manual. Recupere seções relevantes, cite evidências e abstenha-se sem resposta. O fixture tem 80 perguntas respondíveis e 20 sem resposta; cada resposta exige três seções."),
+    settings: {"profile": "load", "targetRps": 20, "readRatio": 1, "seed": 312, "chaos": "off"},
+    duration: 180,
+    design: D([
+      N("users", "client", 60, 180, "users", {"timeoutMs": 120000}),
+      N("api", "app", 260, 180, "AI API", {"threads": 2000}),
+      N("llm", "llmgw", 720, 180, "model", {"quota": 1000})
+    ], [
+      E("users", "api"), E("api", "llm")
+    ]),
+    solution: D([
+      N("users", "client", 60, 180, "users", {"timeoutMs": 120000}),
+      N("api", "app", 260, 180, "AI API", {"threads": 2000}),
+      N("llm", "llmgw", 720, 180, "model", {"quota": 1000}),
+      N("memory", "memory", 450, 300, "retrieval", {"aiTopK": 3, "aiCitations": true, "aiAbstain": true}),
+      N("index", "vectordb", 700, 360, "handbook", {})
+    ], [
+      E("users", "api"), E("api", "memory"), E("memory", "index"), E("memory", "llm")
+    ]),
+    goals: [G("aiRetrievalRecall", ">=", 90), G("aiSupportedClaims", ">=", 95), G("aiAbstention", ">=", 90), G("aiTokenReduction", ">=", 80)],
+    hints: [
+      T("Add Memory Fabric connected to a Vector DB. Select Memory Fabric to change retrieved sections, source evidence and abstention.", "Adicione Memory Fabric conectado a Vector DB. Selecione Memory Fabric para ajustar seções, evidência e abstenção."),
+      T("Retrieval recall and citation support are separate checks. Retrieving too little loses facts; retrieving everything defeats the token budget.", "Recall e suporte das citações são verificações distintas. Poucas seções perdem fatos; recuperar tudo desperdiça tokens.")
+    ],
+    aiControls: ["aiTopK", "aiCitations", "aiAbstain"]
+  });
+
+  add({
+    id: "ai-order-status",
+    group: "ai",
+    aiKind: "order",
+    title: T("Order-status assistant: use a tool for live facts",
+      "Assistente de pedidos: use uma ferramenta para fatos atuais"),
+    brief: T("Tell customers where their orders are. The model knows policy, not live order status. Add an authenticated order lookup. Handle forbidden orders, malformed arguments and tool outages without guessing. Every reported status must come from a successful read for the requesting user.",
+      "Informe onde estão os pedidos. O modelo conhece políticas, não o estado atual. Adicione consulta autenticada. Trate pedidos proibidos, argumentos inválidos e falhas sem inventar. Todo estado informado deve vir de uma leitura válida para o usuário."),
+    settings: {"profile": "load", "targetRps": 20, "readRatio": 1, "seed": 313, "chaos": "off"},
+    duration: 180,
+    design: D([
+      N("users", "client", 60, 180, "users", {"timeoutMs": 120000}),
+      N("api", "app", 260, 180, "AI API", {"threads": 2000}),
+      N("llm", "llmgw", 720, 180, "model", {"quota": 1000}),
+      N("orders", "sql", 740, 380, "orders", {})
+    ], [
+      E("users", "api"), E("api", "llm")
+    ]),
+    solution: D([
+      N("users", "client", 60, 180, "users", {"timeoutMs": 120000}),
+      N("api", "app", 260, 180, "AI API", {"threads": 2000}),
+      N("llm", "llmgw", 720, 180, "model", {"quota": 1000}),
+      N("orders", "sql", 740, 380, "orders", {}),
+      N("tools", "toolreg", 470, 350, "order lookup", {"aiAuthorize": true, "aiValidate": true, "aiEvidence": true, "aiAttempts": 2})
+    ], [
+      E("users", "api"), E("api", "tools"), E("tools", "orders"), E("tools", "llm")
+    ]),
+    goals: [G("aiWrongStatus", "<=", 0), G("aiUnauthorized", "<=", 0), G("aiToolP95", "<", 3), G("aiToolAttempts", "<=", 2)],
+    hints: [
+      T("Connect the API to Tool Registry, then to the order database. Enforce authorization and validate arguments in application code.", "Conecte a API ao Tool Registry e ao banco de pedidos. Aplique autorização e valide argumentos no código."),
+      T("Only successful tool results may become status answers. Bound attempts and explicitly report unavailability.", "Só resultados válidos podem virar respostas sobre estado. Limite tentativas e informe indisponibilidade.")
+    ],
+    aiControls: ["aiAuthorize", "aiValidate", "aiEvidence", "aiAttempts"]
+  });
+
+  add({
+    id: "ai-ingestion",
+    group: "ai",
+    aiKind: "ingestion",
+    title: T("Document ingestion: the index falls behind",
+      "Ingestão de documentos: o índice fica para trás"),
+    brief: T("Customers upload 10,000 documents over five minutes. Parse, chunk, embed and index each document; embeddings allow 100 calls/s. A worker crashes at t=120 s. Acknowledge uploads within 500 ms, index 99% within ten minutes, and recover without lost documents or duplicate chunks.",
+      "Clientes enviam 10.000 documentos em cinco minutos. Extraia, divida, gere embeddings e indexe; o provedor permite 100 chamadas/s. Um worker cai em t=120 s. Confirme uploads em 500 ms, indexe 99% em dez minutos e recupere sem perdas nem trechos duplicados."),
+    settings: {"profile": "load", "targetRps": 34, "readRatio": 1, "seed": 314, "chaos": "off"},
+    duration: 180,
+    design: D([
+      N("users", "client", 60, 180, "uploads", {}),
+      N("api", "app", 250, 180, "upload API", {}),
+      N("originals", "objstore", 460, 80, "originals", {}),
+      N("worker", "worker", 460, 260, "parse + chunk", {"threads": 2}),
+      N("llm", "llmgw", 690, 260, "embeddings", {"quota": 100, "latencyMs": 100}),
+      N("index", "vectordb", 910, 260, "index", {})
+    ], [
+      E("users", "api"), E("api", "originals"), E("api", "worker"), E("worker", "llm"), E("llm", "index")
+    ]),
+    solution: D([
+      N("users", "client", 60, 180, "uploads", {}),
+      N("api", "app", 250, 180, "upload API", {"aiAsync": true}),
+      N("originals", "objstore", 460, 80, "originals", {}),
+      N("worker", "worker", 460, 260, "parse + chunk", {"threads": 20, "aiChunkTokens": 1000, "aiCheckpoint": true, "aiIdempotent": true}),
+      N("llm", "llmgw", 690, 260, "embeddings", {"quota": 100, "latencyMs": 100}),
+      N("index", "vectordb", 910, 260, "index", {}),
+      N("jobs", "queue", 270, 390, "document jobs", {})
+    ], [
+      E("users", "api"), E("api", "originals"), E("worker", "llm"), E("llm", "index"), E("api", "jobs"), E("jobs", "worker")
+    ]),
+    goals: [G("aiAckP99", "<", 0.5), G("aiIndexP99", "<", 600), G("aiIndexErrors", "<=", 0), G("aiQuotaPeak", "<=", 100)],
+    hints: [
+      T("Store the original and enqueue durable work before acknowledging. Worker concurrency cannot raise the embedding quota.", "Armazene o original e enfileire trabalho durável antes de confirmar. Concorrência não aumenta a cota de embeddings."),
+      T("Use stable chunk IDs for idempotent indexing and persist progress; replaying an unfinished step must be safe.", "Use IDs estáveis para indexação idempotente e persista progresso; repetir etapa interrompida deve ser seguro.")
+    ],
+    aiControls: ["aiAsync", "aiChunkTokens", "aiCheckpoint", "aiIdempotent"],
+    events: [{"t": 120, "type": "crash", "target": "worker", "durationS": 5, "label": {"en": "ingestion worker restarts", "pt": "worker de ingestão reinicia"}}]
+  });
+
+  add({
+    id: "ai-tenant-search",
+    group: "ai",
+    aiKind: "tenant",
+    title: T("Enterprise search: the answer crosses a tenant boundary",
+      "Busca empresarial: a resposta cruza o limite do tenant"),
+    brief: T("One assistant serves 100 companies with a shared index and answer cache. Enforce the requesting user’s document permissions. At t=60 s, revoke access; subsequent queries must stop revealing that document within 30 seconds. Test same-question cache hits across identities as well as retrieval.",
+      "Um assistente atende 100 empresas com índice e cache compartilhados. Aplique permissões do usuário. Em t=60 s, revogue acesso; em até 30 s, consultas devem parar de revelar o documento. Teste cache da mesma pergunta entre identidades e a busca."),
+    settings: {"profile": "load", "targetRps": 100, "readRatio": 1, "seed": 315, "chaos": "off"},
+    duration: 180,
+    design: D([
+      N("users", "client", 60, 180, "users", {"timeoutMs": 120000}),
+      N("api", "app", 260, 180, "AI API", {"threads": 2000}),
+      N("llm", "llmgw", 720, 180, "model", {"quota": 1000}),
+      N("memory", "memory", 440, 300, "retrieval", {"aiTopK": 3}),
+      N("index", "vectordb", 700, 380, "shared index", {}),
+      N("cache", "cache", 450, 60, "answer cache", {})
+    ], [
+      E("users", "api"), E("api", "cache"), E("cache", "memory"), E("memory", "index"), E("memory", "llm")
+    ]),
+    solution: D([
+      N("users", "client", 60, 180, "users", {"timeoutMs": 120000}),
+      N("api", "app", 260, 180, "AI API", {"threads": 2000}),
+      N("llm", "llmgw", 720, 180, "model", {"quota": 1000}),
+      N("memory", "memory", 440, 300, "retrieval", {"aiTopK": 3, "aiTenantFilter": true, "aiPermissionTtl": 20}),
+      N("index", "vectordb", 700, 380, "shared index", {}),
+      N("cache", "cache", 450, 60, "answer cache", {"aiScopedCache": true})
+    ], [
+      E("users", "api"), E("api", "cache"), E("cache", "memory"), E("memory", "index"), E("memory", "llm")
+    ]),
+    goals: [G("aiUnauthorized", "<=", 0), G("aiRevocationS", "<=", 30), G("aiPermittedRecall", ">=", 95), G("aiRetrievalP95", "<", 0.3)],
+    hints: [
+      T("Memory Fabric must filter by tenant AND ACL before returning evidence. More relevant does not mean authorized.", "Memory Fabric deve filtrar por tenant E ACL antes de retornar evidências. Relevância não implica autorização."),
+      T("Scope answer caches by tenant, user and permission version; bound permission-cache TTL. Measure retrieval separately from generation latency.", "Isole caches por tenant, usuário e versão de permissão; limite TTL de permissões. Meça a busca separada da geração.")
+    ],
+    aiControls: ["aiTopK", "aiTenantFilter", "aiPermissionTtl", "aiScopedCache"]
+  });
+
+  add({
+    id: "ai-research",
+    group: "ai",
+    aiKind: "research",
+    title: T("Research agent: survive a restart halfway through",
+      "Agente de pesquisa: sobreviva a um reinício"),
+    brief: T("Generate reports needing ten model calls and twenty source fetches. The worker restarts at t=90 s. Finish accepted jobs, retain completed evidence, and reconnect users through persisted job state. Complete within five minutes without exceeding ten model calls or twenty fetches per job.",
+      "Gere relatórios que exigem dez chamadas ao modelo e vinte buscas de fontes. O worker reinicia em t=90 s. Conclua jobs aceitos, retenha evidências e reconecte usuários pelo estado persistido. Termine em cinco minutos sem exceder dez chamadas ou vinte buscas por job."),
+    settings: {"profile": "load", "targetRps": 1, "readRatio": 1, "seed": 316, "chaos": "off"},
+    duration: 180,
+    design: D([
+      N("users", "client", 60, 180, "research requests", {"timeoutMs": 120000}),
+      N("agent", "orchestrator", 280, 180, "research agent", {"steps": 1, "threads": 100}),
+      N("llm", "llmgw", 530, 80, "model", {"latencyMs": 6000, "quota": 1000}),
+      N("tools", "toolreg", 530, 300, "research tools", {}),
+      N("sources", "thirdparty", 760, 300, "source fetch", {})
+    ], [
+      E("users", "agent"), E("agent", "llm"), E("agent", "tools"), E("tools", "sources")
+    ]),
+    solution: D([
+      N("users", "client", 60, 180, "research requests", {"timeoutMs": 120000}),
+      N("agent", "orchestrator", 280, 180, "research agent", {"steps": 1, "threads": 100, "aiCheckpoint": true, "aiMaxCalls": 10, "aiMaxFetches": 20}),
+      N("llm", "llmgw", 530, 80, "model", {"latencyMs": 6000, "quota": 1000}),
+      N("tools", "toolreg", 530, 300, "research tools", {}),
+      N("sources", "thirdparty", 760, 300, "source fetch", {}),
+      N("state", "sql", 300, 400, "job + step state", {})
+    ], [
+      E("users", "agent"), E("agent", "llm"), E("agent", "tools"), E("tools", "sources"), E("agent", "state")
+    ]),
+    goals: [G("aiJobCompletion", ">=", 99), G("aiJobP99", "<", 300), G("aiRepeatedSteps", "<=", 1), G("aiBudgetViolations", "<=", 0)],
+    hints: [
+      T("Persist job IDs, completed steps and evidence in SQL; enable checkpoints on the orchestrator. Streaming alone cannot recover a job.", "Persista IDs, etapas e evidências no SQL; ative checkpoints no orquestrador. Streaming sozinho não recupera jobs."),
+      T("Set explicit call/fetch budgets. Setting limits below required work prevents completion rather than making research cheaper.", "Defina orçamentos de chamadas e buscas. Limites menores que o necessário impedem a conclusão.")
+    ],
+    aiControls: ["aiCheckpoint", "aiMaxCalls", "aiMaxFetches"],
+    events: [{"t": 90, "type": "crash", "target": "agent", "durationS": 5, "label": {"en": "research worker restarts", "pt": "worker de pesquisa reinicia"}}]
+  });
+
+  add({
+    id: "ai-refunds",
+    group: "ai",
+    aiKind: "refund",
+    title: T("Refund agent: the timeout that pays twice",
+      "Agente de reembolso: o timeout que paga duas vezes"),
+    brief: T("A support agent issues approved refunds. Twenty of 100 payment requests commit before their reply times out; both the agent and runner may retry. Prevent duplicate effects, require recorded authorization, and reconcile uncertain results within two minutes.",
+      "Um agente emite reembolsos aprovados. Vinte de 100 pagamentos efetivam antes do timeout; agente e executor podem repetir. Evite efeitos duplicados, exija autorização registrada e reconcilie resultados incertos em dois minutos."),
+    settings: {"profile": "load", "targetRps": 5, "readRatio": 1, "seed": 317, "chaos": "off"},
+    duration: 180,
+    design: D([
+      N("users", "client", 60, 180, "refund requests", {}),
+      N("agent", "orchestrator", 270, 180, "support agent", {"steps": 1}),
+      N("llm", "llmgw", 510, 60, "model", {"quota": 1000}),
+      N("tools", "toolreg", 510, 290, "refund tool", {}),
+      N("payment", "payment", 760, 290, "payment provider", {})
+    ], [
+      E("users", "agent"), E("agent", "llm"), E("agent", "tools"), E("tools", "payment")
+    ]),
+    solution: D([
+      N("users", "client", 60, 180, "refund requests", {}),
+      N("agent", "orchestrator", 270, 180, "support agent", {"steps": 1}),
+      N("llm", "llmgw", 510, 60, "model", {"quota": 1000}),
+      N("tools", "toolreg", 510, 290, "refund tool", {"aiAuthorize": true, "aiIdempotent": true, "aiReconcileS": 60}),
+      N("payment", "payment", 760, 290, "payment provider", {}),
+      N("ledger", "sql", 750, 440, "authorization + operations", {})
+    ], [
+      E("users", "agent"), E("agent", "llm"), E("agent", "tools"), E("tools", "payment"), E("tools", "ledger")
+    ]),
+    goals: [G("aiDuplicateRefunds", "<=", 0), G("aiUnauthorized", "<=", 0), G("aiReconcileS", "<=", 120), G("aiRefundCompletion", ">=", 99)],
+    hints: [
+      T("Use a stable operation ID across retries and a durable ledger. A fresh ID makes a retry look like a new refund.", "Use ID estável entre tentativas e registro durável. ID novo faz a repetição parecer novo reembolso."),
+      T("Record authorization for the exact action and reconcile uncertain provider outcomes; a timeout does not mean no payment happened.", "Registre autorização da ação exata e reconcilie resultados incertos; timeout não significa ausência de pagamento.")
+    ],
+    aiControls: ["aiAuthorize", "aiIdempotent", "aiReconcileS"]
+  });
+
+  add({
+    id: "ai-model-routing",
+    group: "ai",
+    aiKind: "routing",
+    title: T("Model routing: meet the budget without losing quality",
+      "Roteamento de modelos: cumpra o orçamento sem perder qualidade"),
+    brief: T("Triage 50 tickets/s. Most are easy; some require stronger reasoning. Today every ticket uses the expensive model. Route selectively and preserve valid classifications during a 30-second provider outage. Prices and labeled outcomes in this lesson are synthetic, not provider benchmarks.",
+      "Classifique 50 tickets/s. A maioria é simples; alguns exigem raciocínio maior. Hoje todos usam o modelo caro. Roteie seletivamente e preserve classificações válidas durante falha de 30 s do provedor. Preços e resultados rotulados são sintéticos, não benchmarks."),
+    settings: {"profile": "load", "targetRps": 50, "readRatio": 1, "seed": 318, "chaos": "off"},
+    duration: 180,
+    design: D([
+      N("users", "client", 60, 180, "users", {"timeoutMs": 120000}),
+      N("api", "app", 260, 180, "AI API", {"threads": 2000}),
+      N("llm", "llmgw", 720, 180, "model", {"quota": 1000})
+    ], [
+      E("users", "api"), E("api", "llm")
+    ]),
+    solution: D([
+      N("users", "client", 60, 180, "users", {"timeoutMs": 120000}),
+      N("api", "app", 260, 180, "AI API", {"threads": 2000}),
+      N("llm", "llmgw", 720, 180, "model", {"quota": 1000, "aiRoute": true, "aiEscalate": true, "aiValidate": true, "fallbackModel": true})
+    ], [
+      E("users", "api"), E("api", "llm")
+    ]),
+    goals: [G("aiClassification", ">=", 95), G("aiCostPerTicket", "<", 0.005), G("aiRoutingP95", "<", 3), G("aiValidCompletion", ">=", 99)],
+    hints: [
+      T("Select LLM Gateway: route easy tickets to the small model, escalate uncertain cases and validate output schemas.", "Selecione LLM Gateway: roteie tickets simples ao modelo pequeno, escale casos incertos e valide esquemas."),
+      T("Enable a fallback for provider outages. Compare cost per accepted ticket and quality; HTTP success alone is insufficient.", "Ative fallback para falhas do provedor. Compare custo e qualidade; sucesso HTTP é insuficiente.")
+    ],
+    aiControls: ["aiRoute", "aiEscalate", "aiValidate"],
+    events: [{"t": 60, "type": "crash", "target": "llm", "durationS": 30, "label": {"en": "primary model provider unavailable", "pt": "provedor principal indisponível"}}]
+  });
+
   /* the classic interview problems (case-study pages) form their own group in the menu */
   ["url-shortener", "news-feed", "chat", "ride-sharing", "video-streaming", "notification-system", "payment-system", "search-autocomplete"]
     .forEach(function (id) { LIST.forEach(function (s) { if (s.id === id) s.group = "case"; }); });

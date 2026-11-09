@@ -61,6 +61,14 @@ Cada cenário do [System Design Playground](../index.md) é um pequeno laborató
 | [BoxOffice lab 13: os agentes de build dividem a cota de LLM dos fãs](#boxoffice-shared-llm) | Agentes em segundo plano não podem deixar os fãs sem nada: enfileire-os e limite sua concorrência |
 | [Venda de ingressos: 2 M de fãs, 60 mil assentos](#ticketing) | Consultas na borda, entradas numa sala de espera, compradores admitidos a ≈ 33/s |
 | [Cache distribuído: memória ou vazão?](#distributed-cache) | Dimensione um cache por memória e por vazão; a taxa de acerto dimensiona o banco |
+| [Resumo com IA: o prompt é grande demais](#ai-summarizer) | Cada chamada exige tokens do trecho + saída reservada <= limite de contexto. Observe chamadas agregadas e a cota. |
+| [Assistente FAQ: pare de enviar o manual inteiro](#ai-faq) | Recall e suporte das citações são verificações distintas. Poucas seções perdem fatos; recuperar tudo desperdiça tokens. |
+| [Assistente de pedidos: use uma ferramenta para fatos atuais](#ai-order-status) | Só resultados válidos podem virar respostas sobre estado. Limite tentativas e informe indisponibilidade. |
+| [Ingestão de documentos: o índice fica para trás](#ai-ingestion) | Use IDs estáveis para indexação idempotente e persista progresso; repetir etapa interrompida deve ser seguro. |
+| [Busca empresarial: a resposta cruza o limite do tenant](#ai-tenant-search) | Isole caches por tenant, usuário e versão de permissão; limite TTL de permissões. Meça a busca separada da geração. |
+| [Agente de pesquisa: sobreviva a um reinício](#ai-research) | Defina orçamentos de chamadas e buscas. Limites menores que o necessário impedem a conclusão. |
+| [Agente de reembolso: o timeout que paga duas vezes](#ai-refunds) | Registre autorização da ação exata e reconcilie resultados incertos; timeout não significa ausência de pagamento. |
+| [Roteamento de modelos: cumpra o orçamento sem perder qualidade](#ai-model-routing) | Ative fallback para falhas do provedor. Compare custo e qualidade; sucesso HTTP é insuficiente. |
 
 ## Monólito: encontre o ponto de ruptura { #monolith }
 
@@ -886,3 +894,99 @@ O estudo de caso: 1 bilhão de itens de 1 KB, 2 milhões de leituras/s, 95% de a
     1. Quantos nós são necessários por memória e por vazão e por que o caso termina com 50?
     2. Perder 1 de 25 nós acrescenta ≈ 80 000 misses/s: o banco aguenta?
     3. Por que o hashing consistente importa quando um nó entra ou sai?
+
+## Sistemas de IA { #ai-systems }
+
+Siga esta ordem: resumo → busca → ferramentas → ingestão → permissões → recuperação → efeitos → roteamento. Cada cenário começa com um design que falha. Selecione um componente para editar controles de IA; use **Mostrar uma solução possível** para comparar arquiteturas.
+
+!!! note "O que é medido"
+
+    Metas de IA reproduzem fixtures sintéticos determinísticos **após o fim da execução**. Não chamam modelos nem medem qualidade real. Gráficos de carga e latência amostrada continuam no modelo fluido; tempos, preços e falhas dos fixtures são um modelo didático separado. O relatório explica a carga. Passar no fixture é evidência sobre este modelo, não garantia de produção.
+
+### 1. Resumo com IA: o prompt é grande demais { #ai-summarizer }
+
+Resuma transcrições a 20 req/s: 90% têm 3.000 tokens, 10% têm 100.000. O modelo aceita 16.000 tokens, incluindo a saída. Hoje cada transcrição vira uma chamada síncrona. Preserve as vinte decisões rotuladas, reserve espaço para saída e confirme jobs longos de forma assíncrona. p95 curto <10 s; p99 longo <120 s.
+
+- **Design inicial:** users → AI API; AI API → model.
+- **Critérios de aceitação:** `aiContextErrors` <= 0 · `aiShortP95` < 10 s · `aiLongP99` < 120 s · `aiFactRecall` >= 90%.
+- **Experimente:** Selecione AI API: divida entradas longas em trechos e ative confirmação em segundo plano. Um contexto maior é alternativa, com outro custo.
+- **Observe:** Cada chamada exige tokens do trecho + saída reservada <= limite de contexto. Observe chamadas agregadas e a cota.
+
+<div class="sdp" data-scenario="ai-summarizer" data-mode="compact" data-height="420"></div>
+
+### 2. Assistente FAQ: pare de enviar o manual inteiro { #ai-faq }
+
+Responda perguntas de funcionários a partir de um manual de 500 páginas. Hoje cada pedido envia 100.000 tokens do manual. Recupere seções relevantes, cite evidências e abstenha-se sem resposta. O fixture tem 80 perguntas respondíveis e 20 sem resposta; cada resposta exige três seções.
+
+- **Design inicial:** users → AI API; AI API → model.
+- **Critérios de aceitação:** `aiRetrievalRecall` >= 90% · `aiSupportedClaims` >= 95% · `aiAbstention` >= 90% · `aiTokenReduction` >= 80%.
+- **Experimente:** Adicione Memory Fabric conectado a Vector DB. Selecione Memory Fabric para ajustar seções, evidência e abstenção.
+- **Observe:** Recall e suporte das citações são verificações distintas. Poucas seções perdem fatos; recuperar tudo desperdiça tokens.
+
+<div class="sdp" data-scenario="ai-faq" data-mode="compact" data-height="420"></div>
+
+### 3. Assistente de pedidos: use uma ferramenta para fatos atuais { #ai-order-status }
+
+Informe onde estão os pedidos. O modelo conhece políticas, não o estado atual. Adicione consulta autenticada. Trate pedidos proibidos, argumentos inválidos e falhas sem inventar. Todo estado informado deve vir de uma leitura válida para o usuário.
+
+- **Design inicial:** users → AI API; AI API → model.
+- **Critérios de aceitação:** `aiWrongStatus` <= 0 · `aiUnauthorized` <= 0 · `aiToolP95` < 3 s · `aiToolAttempts` <= 2.
+- **Experimente:** Conecte a API ao Tool Registry e ao banco de pedidos. Aplique autorização e valide argumentos no código.
+- **Observe:** Só resultados válidos podem virar respostas sobre estado. Limite tentativas e informe indisponibilidade.
+
+<div class="sdp" data-scenario="ai-order-status" data-mode="compact" data-height="420"></div>
+
+### 4. Ingestão de documentos: o índice fica para trás { #ai-ingestion }
+
+Clientes enviam 10.000 documentos em cinco minutos. Extraia, divida, gere embeddings e indexe; o provedor permite 100 chamadas/s. Um worker cai em t=120 s. Confirme uploads em 500 ms, indexe 99% em dez minutos e recupere sem perdas nem trechos duplicados.
+
+- **Design inicial:** uploads → upload API; upload API → originals; upload API → parse + chunk; parse + chunk → embeddings; embeddings → index.
+- **Critérios de aceitação:** `aiAckP99` < 0.5 s · `aiIndexP99` < 600 s · `aiIndexErrors` <= 0 · `aiQuotaPeak` <= 100 calls/s.
+- **Experimente:** Armazene o original e enfileire trabalho durável antes de confirmar. Concorrência não aumenta a cota de embeddings.
+- **Observe:** Use IDs estáveis para indexação idempotente e persista progresso; repetir etapa interrompida deve ser seguro.
+
+<div class="sdp" data-scenario="ai-ingestion" data-mode="compact" data-height="420"></div>
+
+### 5. Busca empresarial: a resposta cruza o limite do tenant { #ai-tenant-search }
+
+Um assistente atende 100 empresas com índice e cache compartilhados. Aplique permissões do usuário. Em t=60 s, revogue acesso; em até 30 s, consultas devem parar de revelar o documento. Teste cache da mesma pergunta entre identidades e a busca.
+
+- **Design inicial:** users → AI API; AI API → answer cache; answer cache → retrieval; retrieval → shared index; retrieval → model.
+- **Critérios de aceitação:** `aiUnauthorized` <= 0 · `aiRevocationS` <= 30 s · `aiPermittedRecall` >= 95% · `aiRetrievalP95` < 0.3 s.
+- **Experimente:** Memory Fabric deve filtrar por tenant E ACL antes de retornar evidências. Relevância não implica autorização.
+- **Observe:** Isole caches por tenant, usuário e versão de permissão; limite TTL de permissões. Meça a busca separada da geração.
+
+<div class="sdp" data-scenario="ai-tenant-search" data-mode="compact" data-height="420"></div>
+
+### 6. Agente de pesquisa: sobreviva a um reinício { #ai-research }
+
+Gere relatórios que exigem dez chamadas ao modelo e vinte buscas de fontes. O worker reinicia em t=90 s. Conclua jobs aceitos, retenha evidências e reconecte usuários pelo estado persistido. Termine em cinco minutos sem exceder dez chamadas ou vinte buscas por job.
+
+- **Design inicial:** research requests → research agent; research agent → model; research agent → research tools; research tools → source fetch.
+- **Critérios de aceitação:** `aiJobCompletion` >= 99% · `aiJobP99` < 300 s · `aiRepeatedSteps` <= 1 · `aiBudgetViolations` <= 0.
+- **Experimente:** Persista IDs, etapas e evidências no SQL; ative checkpoints no orquestrador. Streaming sozinho não recupera jobs.
+- **Observe:** Defina orçamentos de chamadas e buscas. Limites menores que o necessário impedem a conclusão.
+
+<div class="sdp" data-scenario="ai-research" data-mode="compact" data-height="420"></div>
+
+### 7. Agente de reembolso: o timeout que paga duas vezes { #ai-refunds }
+
+Um agente emite reembolsos aprovados. Vinte de 100 pagamentos efetivam antes do timeout; agente e executor podem repetir. Evite efeitos duplicados, exija autorização registrada e reconcilie resultados incertos em dois minutos.
+
+- **Design inicial:** refund requests → support agent; support agent → model; support agent → refund tool; refund tool → payment provider.
+- **Critérios de aceitação:** `aiDuplicateRefunds` <= 0 · `aiUnauthorized` <= 0 · `aiReconcileS` <= 120 s · `aiRefundCompletion` >= 99%.
+- **Experimente:** Use ID estável entre tentativas e registro durável. ID novo faz a repetição parecer novo reembolso.
+- **Observe:** Registre autorização da ação exata e reconcilie resultados incertos; timeout não significa ausência de pagamento.
+
+<div class="sdp" data-scenario="ai-refunds" data-mode="compact" data-height="420"></div>
+
+### 8. Roteamento de modelos: cumpra o orçamento sem perder qualidade { #ai-model-routing }
+
+Classifique 50 tickets/s. A maioria é simples; alguns exigem raciocínio maior. Hoje todos usam o modelo caro. Roteie seletivamente e preserve classificações válidas durante falha de 30 s do provedor. Preços e resultados rotulados são sintéticos, não benchmarks.
+
+- **Design inicial:** users → AI API; AI API → model.
+- **Critérios de aceitação:** `aiClassification` >= 95% · `aiCostPerTicket` < 0.005 USD · `aiRoutingP95` < 3 s · `aiValidCompletion` >= 99%.
+- **Experimente:** Selecione LLM Gateway: roteie tickets simples ao modelo pequeno, escale casos incertos e valide esquemas.
+- **Observe:** Ative fallback para falhas do provedor. Compare custo e qualidade; sucesso HTTP é insuficiente.
+
+<div class="sdp" data-scenario="ai-model-routing" data-mode="compact" data-height="420"></div>

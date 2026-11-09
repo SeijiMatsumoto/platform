@@ -12,6 +12,8 @@ Draw a system with the components of the course, put it under load, and **watch 
 
 Pick a scenario in the toolbar (or **Blank canvas**), press ▶ and read the panels below the canvas. The menu groups the scenarios: building blocks, [BoxOffice](scenarios/index.md#boxoffice) (the system of the 2027.1 classes and labs, with their numbers) and case studies; the [scenario guide](scenarios/index.md) explains what each one teaches. Your design is saved in this browser for each scenario; **Reset scenario** brings the original back.
 
+The selected scenario is stored in the URL, for example `?scenario=ai-faq`. Copy the address to open the same scenario elsewhere; reload and Back/Forward preserve the selection. Use **Copy a share link** to include your edited design and settings as well.
+
 !!! abstract "What the playground is (and is not)"
 
     It is a **teaching model**: a few dozen lines of math per component, tuned so that the behaviour is realistic and explainable — the knee of the latency curve, a thread pool that runs out, a backlog that drains, a cache stampede. It is **not** a benchmark: the capacities and prices of the catalog are illustrative, chosen to make the arithmetic easy. Use it to reason about *shapes* and *orders of magnitude*, then measure the real system (hands-on labs).
@@ -311,3 +313,9 @@ Write a short *Try it* instruction before each embed: what to change, what to ob
 - A Kubernetes cluster is a count of slots (nodes × pods per node): there is no bin packing by CPU and memory, no affinity rules and no pod disruption budgets, and the pods are spread evenly over the nodes.
 - Network latency between users and the system is not added (the latency shown is server-side), except the +70 ms of calls between regions and +1 ms per hop in a service mesh.
 - Capacities and prices are illustrative round numbers. When the playground and a load test disagree, trust the load test — and find out why.
+
+## AI systems practice
+
+The scenario menu includes eight [AI systems labs](scenarios/index.md#ai-systems), ordered from summarization, retrieval and live tools to ingestion, tenant isolation, durable research, safe refunds and model routing. Each has a failing initial design, acceptance checks, hints and a possible solution.
+
+AI checks run at the end using synthetic labeled fixtures. Their timings, token counts, prices and failures are explicit teaching assumptions, separate from the fluid load charts. They never call a paid model and cannot establish real-world model quality. Read the report for the fixture workload and results.

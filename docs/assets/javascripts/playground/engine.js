@@ -31,9 +31,9 @@
  * Works in the browser (window.SDP.engine) and in Node (module.exports).
  */
 (function (root, factory) {
-  if (typeof module === "object" && module.exports) module.exports = factory(require("./rng.js"), require("./catalog.js"));
-  else { root.SDP = root.SDP || {}; root.SDP.engine = factory(root.SDP.rng, root.SDP.catalog); }
-})(typeof self !== "undefined" ? self : this, function (RNG, CAT) {
+  if (typeof module === "object" && module.exports) module.exports = factory(require("./rng.js"), require("./catalog.js"), require("./ai.js"));
+  else { root.SDP = root.SDP || {}; root.SDP.engine = factory(root.SDP.rng, root.SDP.catalog, root.SDP.ai); }
+})(typeof self !== "undefined" ? self : this, function (RNG, CAT, AI) {
   "use strict";
 
   var DT = 0.1;                 // seconds of simulated time per tick
@@ -344,6 +344,7 @@
     var self = this;
     design = normalizeDesign(design);
     this.design = design;
+    this.aiResult = null;
     var nodes = [], byId = {};
     design.nodes.forEach(function (dn) {
       var def = defOf(dn.type);
@@ -1911,7 +1912,7 @@
     }
     var tr = A.trOk + A.trErr;
     var services = this.nodes.filter(function (n) { return isService(n) && !n.def.d.ext; });
-    return {
+    var result = {
       p50: quantile(this.runHist, this.runN, 0.5), p95: quantile(this.runHist, this.runN, 0.95),
       p99: quantile(this.runHist, this.runN, 0.99), p999: quantile(this.runHist, this.runN, 0.999),
       p99Write: quantile(this.runHistW, this.runNW, 0.99),
@@ -1928,6 +1929,11 @@
       observed: services.length ? services.filter(function (n) { return n.observed; }).length / services.length * 100 : 100,
       tracing: this.hasTracing ? 1 : 0, logs: this.hasLogs ? 1 : 0, alerting: this.hasAlerting ? 1 : 0
     };
+    if (this.done && this.scenario && this.scenario.aiKind && AI) {
+      if (!this.aiResult) this.aiResult = AI.evaluate(this.design, this.scenario, this.settings);
+      Object.assign(result, this.aiResult.metrics);
+    }
+    return result;
   };
 
   function checkGoal(g, st) {
@@ -1961,7 +1967,7 @@
     return {
       profile: this.settings.profile, seed: this.settings.seed, chaos: this.settings.chaos, targetRps: this.settings.targetRps,
       duration: Math.round(this.t * 10) / 10, complete: this.done, window: this.window.slice(), sloMs: slo,
-      stats: st, maxSustained: best, goals: this.goals(), bottleneck: this.bottleneck(), hottest: hot,
+      ai: this.aiResult, stats: st, maxSustained: best, goals: this.goals(), bottleneck: this.bottleneck(), hottest: hot,
       events: this.log.filter(function (l) { return l.phase === "start" && l.type !== "scale"; }),
       theory: this.theory, breakpoint: this.breakpoint, knee: this.knee, nodes: this.nodes.length
     };

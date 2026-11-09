@@ -32,7 +32,7 @@ Para enfrentar esses desafios, surgiu a arquitetura multicamadas, que separa a a
 
  a arquitetura monolítica, em que todos os componentes da aplicação eram fortemente acoplados e implantados como uma única unidade. No entanto, à medida que as aplicações cresceram em complexidade e escala, ficou difícil manter e escalar essa arquitetura. Para enfrentar esses desafios, surgiu a arquitetura multicamadas, que separa a aplicação em camadas diferentes, como as camadas de apresentação, de lógica de negócio e de acesso a dados. Essa arquitetura permite uma melhor separação de responsabilidades e facilita a manutenção e a escalabilidade da aplicação.
 
- ## [Aplicação de e-commerce](#e-commerce-application) { #e-commerce-application }
+## Aplicação de e-commerce { #e-commerce-application }
 
 Nesta disciplina, os estudantes vão trabalhar em um projeto para projetar e implementar uma aplicação de e-commerce usando arquitetura de microsserviços e computação em nuvem. A aplicação será composta por vários microsserviços, como catálogo de produtos, gestão de pedidos, processamento de pagamentos e autenticação de usuários. Cada microsserviço será desenvolvido e implantado de forma independente, o que favorece a escalabilidade e a manutenibilidade. A aplicação também vai usar serviços de computação em nuvem, como a AWS, para hospedar e gerenciar a aplicação.
 

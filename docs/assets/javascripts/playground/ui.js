@@ -26,7 +26,7 @@
   /* ─── Interface strings ─── */
   var STR = {
     en: {
-      scenario: "Scenario", grpGeneral: "Building blocks", grpBoxoffice: "BoxOffice (classes and labs)", grpCase: "Case studies", profile: "Load profile", target: "Target RPS", read: "Read %", seed: "Seed", newSeed: "New random seed",
+      scenario: "Scenario", grpAI: "AI systems", grpGeneral: "Building blocks", grpBoxoffice: "BoxOffice (classes and labs)", grpCase: "Case studies", profile: "Load profile", target: "Target RPS", read: "Read %", seed: "Seed", newSeed: "New random seed",
       chaos: "Chaos", play: "Run (space)", pause: "Pause (space)", step: "Advance 1 s", reset: "Restart the run", speed: "Speed",
       exportJson: "Export the design (JSON)", importJson: "Import a design (JSON)", share: "Copy a share link", mermaid: "Copy as Mermaid flowchart",
       fullscreen: "Full screen", inject: "Inject an event", god: "God mode: show what is not measured", help: "Keyboard shortcuts (?)",
@@ -61,7 +61,7 @@
       lostK: "Lost writes", failoverK: "Failover", promoted: "promoted, one node fewer", noPrimary: "no primary", writeExtra: "Write ack wait", p99w: "p99 (writes)"
     },
     pt: {
-      scenario: "Cenário", grpGeneral: "Blocos de construção", grpBoxoffice: "BoxOffice (aulas e labs)", grpCase: "Estudos de caso", profile: "Perfil de carga", target: "RPS-alvo", read: "% leituras", seed: "Semente", newSeed: "Nova semente aleatória",
+      scenario: "Cenário", grpAI: "Sistemas de IA", grpGeneral: "Blocos de construção", grpBoxoffice: "BoxOffice (aulas e labs)", grpCase: "Estudos de caso", profile: "Perfil de carga", target: "RPS-alvo", read: "% leituras", seed: "Semente", newSeed: "Nova semente aleatória",
       chaos: "Caos", play: "Executar (espaço)", pause: "Pausar (espaço)", step: "Avançar 1 s", reset: "Recomeçar a execução", speed: "Velocidade",
       exportJson: "Exportar o projeto (JSON)", importJson: "Importar um projeto (JSON)", share: "Copiar link de compartilhamento", mermaid: "Copiar como fluxograma Mermaid",
       fullscreen: "Tela cheia", inject: "Injetar um evento", god: "Modo deus: mostra o que não é medido", help: "Atalhos de teclado (?)",
@@ -128,7 +128,41 @@
     ready: { en: "node ready", pt: "nó pronto" }, down: { en: "idle node removed", pt: "nó ocioso removido" }, repaired: { en: "failed node replaced", pt: "nó com falha substituído" },
     evict: { en: "pods evicted (no room)", pt: "pods despejados (sem espaço)" }
   };
+  function aiNote() {
+    return LANG === "pt" ? "Metas de IA usam fixtures sintéticos determinísticos ao fim da execução. Gráficos de carga são um modelo separado; estes resultados não medem qualidade de LLMs reais. Tempos, preços e falhas são hipóteses didáticas." : "AI goals use deterministic synthetic fixtures at the end of the run. Load charts are a separate model; these results do not measure real LLM quality. Times, prices and failures are teaching assumptions.";
+  }
   var GOAL_LABEL = {
+    aiContextErrors: [{"en": "context-limit violations", "pt": "violações de contexto"}, ""],
+    aiShortP95: [{"en": "short transcript p95", "pt": "p95 de transcrições curtas"}, "s"],
+    aiLongP99: [{"en": "async long-job p99", "pt": "p99 de jobs longos assíncronos"}, "s"],
+    aiFactRecall: [{"en": "labeled fact recall", "pt": "recall de fatos rotulados"}, "%"],
+    aiRetrievalRecall: [{"en": "source recall@k", "pt": "recall de fontes@k"}, "%"],
+    aiSupportedClaims: [{"en": "supported fixture claims", "pt": "afirmações sustentadas do fixture"}, "%"],
+    aiAbstention: [{"en": "correct abstention", "pt": "abstenção correta"}, "%"],
+    aiTokenReduction: [{"en": "input token reduction", "pt": "redução de tokens de entrada"}, "%"],
+    aiWrongStatus: [{"en": "incorrect / incomplete order answers", "pt": "respostas de pedidos incorretas / incompletas"}, ""],
+    aiUnauthorized: [{"en": "unauthorized disclosures / actions", "pt": "divulgações / ações não autorizadas"}, ""],
+    aiToolP95: [{"en": "tool workflow p95", "pt": "p95 do fluxo de ferramenta"}, "s"],
+    aiToolAttempts: [{"en": "maximum tool attempts", "pt": "máximo de tentativas"}, ""],
+    aiAckP99: [{"en": "upload acknowledgement p99", "pt": "p99 de confirmação de upload"}, "s"],
+    aiIndexP99: [{"en": "upload-to-index p99", "pt": "p99 de upload até indexação"}, "s"],
+    aiIndexErrors: [{"en": "lost documents + duplicate chunks", "pt": "documentos perdidos + trechos duplicados"}, ""],
+    aiQuotaPeak: [{"en": "peak embedding calls", "pt": "pico de chamadas de embedding"}, "req/s"],
+    aiRetrievalP95: [{ en: "retrieval p95 (fixture)", pt: "p95 da busca (fixture)" }, "s"],
+    aiRevocationS: [{"en": "revocation delay", "pt": "atraso de revogação"}, "s"],
+    aiPermittedRecall: [{"en": "permitted-source recall", "pt": "recall de fontes permitidas"}, "%"],
+    aiJobCompletion: [{"en": "completed research jobs", "pt": "jobs de pesquisa concluídos"}, "%"],
+    aiJobP99: [{"en": "research completion p99", "pt": "p99 de conclusão de pesquisa"}, "s"],
+    aiRepeatedSteps: [{"en": "maximum repeated steps", "pt": "máximo de etapas repetidas"}, ""],
+    aiBudgetViolations: [{"en": "call / fetch budget violations", "pt": "violações de orçamento de chamadas / buscas"}, ""],
+    aiDuplicateRefunds: [{"en": "duplicate refunds", "pt": "reembolsos duplicados"}, ""],
+    aiReconcileS: [{"en": "uncertain-result reconciliation", "pt": "reconciliação de resultado incerto"}, "s"],
+    aiRefundCompletion: [{"en": "authorized refunds completed", "pt": "reembolsos autorizados concluídos"}, "%"],
+    aiClassification: [{"en": "fixture classification accuracy", "pt": "acurácia de classificação do fixture"}, "%"],
+    aiCostPerTicket: [{"en": "inference cost / offered ticket", "pt": "custo de inferência / ticket recebido"}, "USD"],
+    aiRoutingP95: [{"en": "classification p95", "pt": "p95 de classificação"}, "s"],
+    aiValidCompletion: [{"en": "valid classifications completed", "pt": "classificações válidas concluídas"}, "%"],
+
     p50: ["p50", "ms"], p95: ["p95", "ms"], p99: ["p99", "ms"], p999: ["p99.9", "ms"],
     errorRate: [{ en: "error rate", pt: "taxa de erro" }, "%"], availability: [{ en: "availability", pt: "disponibilidade" }, "%"],
     throughput: [{ en: "throughput", pt: "vazão" }, "req/s"], costPerMonth: [{ en: "cost", pt: "custo" }, "USD/mês|USD/month"],
@@ -291,6 +325,8 @@
     var ds = root.dataset;
     this.mode = ds.mode === "compact" ? "compact" : "full";
     this.full = this.mode === "full";
+    // Compact embeds keep their own scenario; only the first full canvas owns the URL.
+    this.urlOwner = this.full && !instances.some(function (p) { return p.urlOwner && !p.dead; });
     this.height = parseInt(ds.height, 10) || (this.full ? 640 : 460);
     this.scenario = SCN.get(ds.scenario || "blank") || SCN.get("blank");
     this.attrs = { profile: ds.profile, seed: ds.seed, chaos: ds.chaos };
@@ -302,6 +338,7 @@
     this.tab = "metrics";
     this.lastUi = 0; this.lastChart = 0; this.logLen = -1;
     this.loadScenario(this.scenario, true);
+    this.syncScenarioUrl(false, false);
     this.build();
     this.newSim();
     this.renderGraph();
@@ -316,6 +353,7 @@
 
   /* ─── Scenario, design and settings ─── */
   P.loadScenario = function (sc, first) {
+    if (first && this.urlOwner) sc = SCN.get(new URL(location.href).searchParams.get("scenario")) || sc;
     this.scenario = sc;
     var s = sc.settings || {};
     this.settings = {
@@ -465,13 +503,13 @@
       var g0 = group("sdp-g-scn");
       var sel = el("select", { class: "sdp-scn", "aria-label": t("scenario") });
       /* grouped menu: generic scenarios, then BoxOffice (group "boxoffice"), then the case studies */
-      var groups = { general: null, boxoffice: null, "case": null }, gkey = { general: "grpGeneral", boxoffice: "grpBoxoffice", "case": "grpCase" };
+      var groups = { general: null, ai: null, boxoffice: null, "case": null }, gkey = { general: "grpGeneral", ai: "grpAI", boxoffice: "grpBoxoffice", "case": "grpCase" };
       SCN.LIST.forEach(function (sc) {
         var g = groups.hasOwnProperty(sc.group) ? sc.group : "general";
         if (!groups[g]) groups[g] = el("optgroup", { label: t(gkey[g]) });
         var o = el("option", { value: sc.id, text: tx(sc.title) }); if (sc.id === self.scenario.id) o.selected = true; groups[g].appendChild(o);
       });
-      ["general", "boxoffice", "case"].forEach(function (g) { if (groups[g]) sel.appendChild(groups[g]); });
+      ["general", "ai", "boxoffice", "case"].forEach(function (g) { if (groups[g]) sel.appendChild(groups[g]); });
       sel.addEventListener("change", function () { self.switchScenario(sel.value); });
       g0.appendChild(labelled(t("scenario"), sel));
     }
@@ -1042,10 +1080,12 @@
   P.goalText = function (g) {
     var gl = GOAL_LABEL[g.metric] || [g.metric, ""], unit = gl[1].indexOf("|") >= 0 ? gl[1].split("|")[LANG === "pt" ? 0 : 1] : gl[1];
     var v = g.value;
-    return tx(gl[0]) + " " + g.op.replace("<=", "≤").replace(">=", "≥") + " " + (g.metric === "costPerMonth" ? fmtUsd(v) : fmtNum(v)) + (unit && g.metric !== "costPerMonth" ? " " + unit : "");
+    return tx(gl[0]) + " " + g.op.replace("<=", "≤").replace(">=", "≥") + " " + (g.metric === "costPerMonth" ? fmtUsd(v) : g.metric === "aiCostPerTicket" ? dec(v, 4) : fmtNum(v)) + (unit && g.metric !== "costPerMonth" ? " " + unit : "");
   };
   P.goalValue = function (metric, v) {
     if (v === undefined || v === null || isNaN(v)) return "—";
+    if (metric.indexOf("ai") === 0 && v >= 1e9) return LANG === "pt" ? "indisponível" : "unavailable";
+    if (metric === "aiCostPerTicket") return dec(v, 4) + " USD";
     if (metric === "costPerMonth") return fmtUsd(v);
     if (/^p\d/.test(metric)) return fmtMs(v);
     var gl = GOAL_LABEL[metric], unit = gl ? gl[1] : "";
@@ -1058,6 +1098,7 @@
     var sc = this.scenario, self = this;
     ins.appendChild(el("h3", { class: "sdp-ins-title", text: tx(sc.title) }));
     ins.appendChild(el("p", { class: "sdp-brief", text: tx(sc.brief) }));
+    if (sc.aiKind) ins.appendChild(el("p", { class: "sdp-note", text: aiNote() }));
     if (this.restored) ins.appendChild(el("p", { class: "sdp-note", text: t("restored") }));
     var s = this.settings;
     ins.appendChild(el("p", { class: "sdp-meta", text: s.profile + " · " + fmtNum(s.targetRps) + " " + t("rps") + " · " + Math.round(s.readRatio * 100) + "% " + (LANG === "pt" ? "leituras" : "reads") + " · seed " + s.seed + " · " + t("chaos").toLowerCase() + " " + tx(CHAOS_LABEL[s.chaos]) }));
@@ -1108,8 +1149,9 @@
     if (this.goalEls) res.forEach(function (r, i) {
       var row = self.goalEls[i];
       if (!row) return;
-      row.className = "sdp-goal " + (!started ? "is-wait" : r.pass ? "is-pass" : "is-fail");
-      row.querySelector(".sdp-goal-v").textContent = started ? self.goalValue(r.goal.metric, r.value) : "";
+      var ready = started && r.value !== undefined;
+      row.className = "sdp-goal " + (!ready ? "is-wait" : r.pass ? "is-pass" : "is-fail");
+      row.querySelector(".sdp-goal-v").textContent = ready ? self.goalValue(r.goal.metric, r.value) : "";
     });
     if (!this.full) this.renderGoalBar(res, started);
   };
@@ -1122,8 +1164,9 @@
     if (!this.scenario.goals.length) { gb.style.display = "none"; return; }
     gb.style.display = "";
     res.forEach(function (r) {
-      var chip = el("span", { class: "sdp-chip " + (!started ? "is-wait" : r.pass ? "is-pass" : "is-fail"), title: self.goalText(r.goal) });
-      chip.textContent = self.goalText(r.goal) + (started ? " · " + self.goalValue(r.goal.metric, r.value) : "");
+      var ready = started && r.value !== undefined;
+      var chip = el("span", { class: "sdp-chip " + (!ready ? "is-wait" : r.pass ? "is-pass" : "is-fail"), title: self.goalText(r.goal) });
+      chip.textContent = self.goalText(r.goal) + (ready ? " · " + self.goalValue(r.goal.metric, r.value) : "");
       gb.appendChild(chip);
     });
   };
@@ -1210,6 +1253,7 @@
       ins.appendChild(el("h4", { text: t("params") }));
       var eff = CAT.params(n);
       c.params.forEach(function (pid) {
+        if (pid.indexOf("ai") === 0 && (!self.scenario.aiKind || self.scenario.aiControls.indexOf(pid) < 0)) return;
         var def = CAT.PARAMS[pid];
         if (!def) return;
         var v = eff[pid];
@@ -1457,6 +1501,10 @@
       .concat(r.knee ? [[t("knee"), fmtNum(r.knee.rps) + " " + t("rps") + " @ " + r.knee.t + " s"]] : [])
       .forEach(function (x) { var c = el("div", { class: "sdp-tile" }); c.innerHTML = '<span class="sdp-tile-k">' + esc(x[0]) + '</span><span class="sdp-tile-v">' + esc(x[1]) + "</span>"; grid.appendChild(c); });
     p.appendChild(grid);
+    if (this.scenario.aiKind) {
+      p.appendChild(el("p", { class: "sdp-note", text: aiNote() }));
+      if (r.ai) r.ai.evidence.forEach(function (item) { p.appendChild(el("p", { class: "sdp-note", text: tx(item) })); });
+    }
 
     if (r.goals.length) {
       p.appendChild(el("h4", { text: t("goals") }));
@@ -1508,6 +1556,10 @@
     lines.push("- error rate " + dec(st.errorRate, 2) + "% · availability " + dec(st.availability, 3) + "% · throughput " + fmtNum(st.throughput) + " req/s · cost " + fmtUsd(st.costPerMonth) + "/month (illustrative)");
     if (r.breakpoint) lines.push("- breaking point " + fmtNum(r.breakpoint.rps) + " req/s");
     lines.push("- " + t("bottleneck") + ": " + this.bottleneckText(r.bottleneck));
+    if (this.scenario.aiKind) {
+      lines.push("", aiNote());
+      if (r.ai) r.ai.evidence.forEach(function (item) { lines.push("", tx(item)); });
+    }
     if (r.goals.length) {
       lines.push("");
       lines.push("| " + t("goals") + " | value | |");
@@ -1923,11 +1975,24 @@
   };
 
   /* ─── Scenario switching, import/export, share ─── */
-  P.switchScenario = function (id, reset) {
+  P.syncScenarioUrl = function (push, clearShared) {
+    if (!this.urlOwner) return;
+    var url = new URL(location.href);
+    url.searchParams.set("scenario", this.scenario.id);
+    if (clearShared && url.hash.indexOf("#sdp=") === 0) url.hash = "";
+    try {
+      if (url.href !== location.href) history[push ? "pushState" : "replaceState"](history.state, "", url.href);
+    } catch (e) { /* sandboxed embeds / file://: keep the local selection working */ }
+    this.urlHash = url.hash;
+  };
+  P.switchScenario = function (id, reset, fromHistory) {
     var sc = SCN.get(id);
     if (!sc) return;
     if (reset) store("sdp:v1:" + id, null);
-    this.loadScenario(sc, false);
+    if (fromHistory) Playground.hashUsed = null;
+    this.loadScenario(sc, !!fromHistory);
+    if (!fromHistory) this.syncScenarioUrl(!reset, true);
+    else this.urlHash = location.hash;
     this.buildToolbar();
     this.newSim();
     this.renderGraph();
@@ -1969,14 +2034,18 @@
   };
   P.encoded = function () { return b64e(JSON.stringify({ s: this.scenario.id, d: this.design, st: this.settings })); };
   P.share = function () {
-    var self = this, url = location.href.split("#")[0] + "#sdp=" + this.encoded();
-    try { history.replaceState(null, "", url); } catch (e) { /* file:// */ }
+    this.syncScenarioUrl(false, false);
+    var self = this, url = new URL(location.href);
+    url.searchParams.set("scenario", this.scenario.id);
+    url.hash = "sdp=" + this.encoded();
+    url = url.href;
+    try { history.replaceState(history.state, "", url); this.urlHash = location.hash; } catch (e) { /* file:// */ }
     copyText(url, function (ok) { self.say(ok ? t("copied") : t("copyFail")); });
   };
   P.fullUrlBase = function () { var pre = sitePrefix(); return pre !== null ? pre + "playground/" : "#"; };
   P.fullUrl = function () {
     var base = this.fullUrlBase();
-    return (base === "#" ? "" : base) + "#sdp=" + this.encoded();
+    return (base === "#" ? "" : base) + "?scenario=" + encodeURIComponent(this.scenario.id) + "#sdp=" + this.encoded();
   };
   P.copyMermaid = function () {
     var self = this;
@@ -2007,6 +2076,12 @@
   /* Theme changes: redraw charts (canvas colours come from CSS variables). */
   if (window.MutationObserver) new MutationObserver(function () { instances.forEach(function (p) { p.drawCharts(); }); })
     .observe(document.body || document.documentElement, { attributes: true, attributeFilter: ["data-md-color-scheme"] });
+  window.addEventListener("popstate", function () {
+    var p = instances.find(function (p) { return p.urlOwner && !p.dead && document.contains(p.root); });
+    if (!p) return;
+    var sc = SCN.get(new URL(location.href).searchParams.get("scenario")) || SCN.get(p.root.dataset.scenario || "blank") || SCN.get("blank");
+    if (sc.id !== p.scenario.id || p.urlHash !== location.hash) p.switchScenario(sc.id, false, true);
+  });
   window.addEventListener("resize", function () { instances.forEach(function (p) { p.drawCharts(); }); });
   document.addEventListener("fullscreenchange", function () { instances.forEach(function (p) { setTimeout(function () { p.fit(); p.drawCharts(); }, 100); }); });
 

@@ -41,6 +41,7 @@ extra_javascript = [
   # System Design Playground (2027.1): order matters
   "assets/javascripts/playground/rng.js",
   "assets/javascripts/playground/catalog.js",
+  "assets/javascripts/playground/ai.js",
   "assets/javascripts/playground/engine.js",
   "assets/javascripts/playground/scenarios.js",
   "assets/javascripts/playground/ui.js",

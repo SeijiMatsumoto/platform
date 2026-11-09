@@ -32,7 +32,7 @@ To address these challenges, the multilayer architecture was introduced, which s
 
  the monolithic architecture, where all components of the application were tightly coupled and deployed as a single unit. However, as applications grew in complexity and scale, this architecture became difficult to maintain and scale. To address these challenges, the multilayer architecture was introduced, which separates the application into different layers, such as presentation, business logic, and data access layers. This architecture allows for better separation of concerns and makes it easier to maintain and scale the application.
 
- ## [E-commerce Application](#e-commerce-application)
+## E-commerce Application { #e-commerce-application }
 
 In this course, students will work on a project to design and implement an e-commerce application using microservices architecture and cloud computing. The application will consist of several microservices, such as product catalog, order management, payment processing, and user authentication. Each microservice will be developed and deployed independently, allowing for better scalability and maintainability. The application will also utilize cloud computing services, such as AWS, for hosting and managing the application.
 

@@ -61,6 +61,14 @@ Every scenario of the [System Design Playground](../index.md) is a small lab: a 
 | [BoxOffice lab 13: build agents share the fans' LLM quota](#boxoffice-shared-llm) | Background agents must not starve the fans: queue them, cap their concurrency |
 | [Ticketing: 2 M fans, 60 k seats](#ticketing) | Polls at the edge, joins in a waiting room, shoppers admitted at ≈ 33/s |
 | [Distributed cache: memory or throughput?](#distributed-cache) | Size a cache by memory and by throughput; the hit ratio sizes the database |
+| [AI summarizer: the prompt is too large](#ai-summarizer) | Each call needs chunk tokens + reserved output tokens <= context limit. Watch aggregate model calls against quota. |
+| [FAQ assistant: stop sending the whole handbook](#ai-faq) | Retrieval recall and citation support are separate checks. Retrieving too little loses facts; retrieving everything defeats the token budget. |
+| [Order-status assistant: use a tool for live facts](#ai-order-status) | Only successful tool results may become status answers. Bound attempts and explicitly report unavailability. |
+| [Document ingestion: the index falls behind](#ai-ingestion) | Use stable chunk IDs for idempotent indexing and persist progress; replaying an unfinished step must be safe. |
+| [Enterprise search: the answer crosses a tenant boundary](#ai-tenant-search) | Scope answer caches by tenant, user and permission version; bound permission-cache TTL. Measure retrieval separately from generation latency. |
+| [Research agent: survive a restart halfway through](#ai-research) | Set explicit call/fetch budgets. Setting limits below required work prevents completion rather than making research cheaper. |
+| [Refund agent: the timeout that pays twice](#ai-refunds) | Record authorization for the exact action and reconcile uncertain provider outcomes; a timeout does not mean no payment happened. |
+| [Model routing: meet the budget without losing quality](#ai-model-routing) | Enable a fallback for provider outages. Compare cost per accepted ticket and quality; HTTP success alone is insufficient. |
 
 ## Monolith: find the breaking point { #monolith }
 
@@ -886,3 +894,99 @@ The case study: 1 billion items of 1 KB, 2 million reads/s, 95% hits. 1.1 TB fit
     1. How many nodes are needed by memory and by throughput, and why does the case end with 50?
     2. Losing 1 of 25 nodes adds ≈ 80 000 misses/s: can the database take them?
     3. Why does consistent hashing matter when a node is added or lost?
+
+## AI systems { #ai-systems }
+
+Work through these in order: summarization → retrieval → tools → ingestion → permissions → recovery → side effects → routing. Each starts with a failing design. Select a component to edit its AI controls; use **Show a possible solution** to compare architectures.
+
+!!! note "What is measured"
+
+    AI goals replay deterministic synthetic fixtures **after the run finishes**. They do not call a model or benchmark real quality. Load charts and sampled latency remain the existing fluid model; fixture timings, prices and scripted failures are a separate teaching model. The report explains the workload. A passing fixture is evidence about this model, not a production guarantee.
+
+### 1. AI summarizer: the prompt is too large { #ai-summarizer }
+
+Summarize transcripts at 20 requests/s: 90% have 3,000 tokens, 10% have 100,000. The model has a 16,000-token context limit, including output. Today each transcript is one synchronous call. Preserve the twenty labeled decisions, reserve output space, and acknowledge long jobs asynchronously. Short p95 <10 s; long p99 <120 s.
+
+- **Initial design:** users → AI API; AI API → model.
+- **Acceptance checks:** `aiContextErrors` <= 0 · `aiShortP95` < 10 s · `aiLongP99` < 120 s · `aiFactRecall` >= 90%.
+- **Try:** Select AI API: split long inputs into chunks and enable background acknowledgement. A larger context is an alternative, with different cost.
+- **Observe:** Each call needs chunk tokens + reserved output tokens <= context limit. Watch aggregate model calls against quota.
+
+<div class="sdp" data-scenario="ai-summarizer" data-mode="compact" data-height="420"></div>
+
+### 2. FAQ assistant: stop sending the whole handbook { #ai-faq }
+
+Answer employee questions from a 500-page handbook. Today every request sends 100,000 handbook tokens. Retrieve the relevant sections, cite evidence, and abstain when there is no answer. The fixture has 80 answerable and 20 unanswerable questions; each answer needs three source sections.
+
+- **Initial design:** users → AI API; AI API → model.
+- **Acceptance checks:** `aiRetrievalRecall` >= 90% · `aiSupportedClaims` >= 95% · `aiAbstention` >= 90% · `aiTokenReduction` >= 80%.
+- **Try:** Add Memory Fabric connected to a Vector DB. Select Memory Fabric to change retrieved sections, source evidence and abstention.
+- **Observe:** Retrieval recall and citation support are separate checks. Retrieving too little loses facts; retrieving everything defeats the token budget.
+
+<div class="sdp" data-scenario="ai-faq" data-mode="compact" data-height="420"></div>
+
+### 3. Order-status assistant: use a tool for live facts { #ai-order-status }
+
+Tell customers where their orders are. The model knows policy, not live order status. Add an authenticated order lookup. Handle forbidden orders, malformed arguments and tool outages without guessing. Every reported status must come from a successful read for the requesting user.
+
+- **Initial design:** users → AI API; AI API → model.
+- **Acceptance checks:** `aiWrongStatus` <= 0 · `aiUnauthorized` <= 0 · `aiToolP95` < 3 s · `aiToolAttempts` <= 2.
+- **Try:** Connect the API to Tool Registry, then to the order database. Enforce authorization and validate arguments in application code.
+- **Observe:** Only successful tool results may become status answers. Bound attempts and explicitly report unavailability.
+
+<div class="sdp" data-scenario="ai-order-status" data-mode="compact" data-height="420"></div>
+
+### 4. Document ingestion: the index falls behind { #ai-ingestion }
+
+Customers upload 10,000 documents over five minutes. Parse, chunk, embed and index each document; embeddings allow 100 calls/s. A worker crashes at t=120 s. Acknowledge uploads within 500 ms, index 99% within ten minutes, and recover without lost documents or duplicate chunks.
+
+- **Initial design:** uploads → upload API; upload API → originals; upload API → parse + chunk; parse + chunk → embeddings; embeddings → index.
+- **Acceptance checks:** `aiAckP99` < 0.5 s · `aiIndexP99` < 600 s · `aiIndexErrors` <= 0 · `aiQuotaPeak` <= 100 calls/s.
+- **Try:** Store the original and enqueue durable work before acknowledging. Worker concurrency cannot raise the embedding quota.
+- **Observe:** Use stable chunk IDs for idempotent indexing and persist progress; replaying an unfinished step must be safe.
+
+<div class="sdp" data-scenario="ai-ingestion" data-mode="compact" data-height="420"></div>
+
+### 5. Enterprise search: the answer crosses a tenant boundary { #ai-tenant-search }
+
+One assistant serves 100 companies with a shared index and answer cache. Enforce the requesting user’s document permissions. At t=60 s, revoke access; subsequent queries must stop revealing that document within 30 seconds. Test same-question cache hits across identities as well as retrieval.
+
+- **Initial design:** users → AI API; AI API → answer cache; answer cache → retrieval; retrieval → shared index; retrieval → model.
+- **Acceptance checks:** `aiUnauthorized` <= 0 · `aiRevocationS` <= 30 s · `aiPermittedRecall` >= 95% · `aiRetrievalP95` < 0.3 s.
+- **Try:** Memory Fabric must filter by tenant AND ACL before returning evidence. More relevant does not mean authorized.
+- **Observe:** Scope answer caches by tenant, user and permission version; bound permission-cache TTL. Measure retrieval separately from generation latency.
+
+<div class="sdp" data-scenario="ai-tenant-search" data-mode="compact" data-height="420"></div>
+
+### 6. Research agent: survive a restart halfway through { #ai-research }
+
+Generate reports needing ten model calls and twenty source fetches. The worker restarts at t=90 s. Finish accepted jobs, retain completed evidence, and reconnect users through persisted job state. Complete within five minutes without exceeding ten model calls or twenty fetches per job.
+
+- **Initial design:** research requests → research agent; research agent → model; research agent → research tools; research tools → source fetch.
+- **Acceptance checks:** `aiJobCompletion` >= 99% · `aiJobP99` < 300 s · `aiRepeatedSteps` <= 1 · `aiBudgetViolations` <= 0.
+- **Try:** Persist job IDs, completed steps and evidence in SQL; enable checkpoints on the orchestrator. Streaming alone cannot recover a job.
+- **Observe:** Set explicit call/fetch budgets. Setting limits below required work prevents completion rather than making research cheaper.
+
+<div class="sdp" data-scenario="ai-research" data-mode="compact" data-height="420"></div>
+
+### 7. Refund agent: the timeout that pays twice { #ai-refunds }
+
+A support agent issues approved refunds. Twenty of 100 payment requests commit before their reply times out; both the agent and runner may retry. Prevent duplicate effects, require recorded authorization, and reconcile uncertain results within two minutes.
+
+- **Initial design:** refund requests → support agent; support agent → model; support agent → refund tool; refund tool → payment provider.
+- **Acceptance checks:** `aiDuplicateRefunds` <= 0 · `aiUnauthorized` <= 0 · `aiReconcileS` <= 120 s · `aiRefundCompletion` >= 99%.
+- **Try:** Use a stable operation ID across retries and a durable ledger. A fresh ID makes a retry look like a new refund.
+- **Observe:** Record authorization for the exact action and reconcile uncertain provider outcomes; a timeout does not mean no payment happened.
+
+<div class="sdp" data-scenario="ai-refunds" data-mode="compact" data-height="420"></div>
+
+### 8. Model routing: meet the budget without losing quality { #ai-model-routing }
+
+Triage 50 tickets/s. Most are easy; some require stronger reasoning. Today every ticket uses the expensive model. Route selectively and preserve valid classifications during a 30-second provider outage. Prices and labeled outcomes in this lesson are synthetic, not provider benchmarks.
+
+- **Initial design:** users → AI API; AI API → model.
+- **Acceptance checks:** `aiClassification` >= 95% · `aiCostPerTicket` < 0.005 USD · `aiRoutingP95` < 3 s · `aiValidCompletion` >= 99%.
+- **Try:** Select LLM Gateway: route easy tickets to the small model, escalate uncertain cases and validate output schemas.
+- **Observe:** Enable a fallback for provider outages. Compare cost per accepted ticket and quality; HTTP success alone is insufficient.
+
+<div class="sdp" data-scenario="ai-model-routing" data-mode="compact" data-height="420"></div>

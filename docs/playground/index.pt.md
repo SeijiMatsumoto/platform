@@ -12,6 +12,8 @@ Desenhe um sistema com os componentes da disciplina, coloque-o sob carga e **vej
 
 Escolha um cenário na barra (ou **Tela em branco**), aperte ▶ e leia os painéis abaixo da tela. O menu agrupa os cenários: blocos de construção, [BoxOffice](scenarios/index.md#boxoffice) (o sistema das aulas e dos labs de 2027.1, com seus números) e estudos de caso; o [guia de cenários](scenarios/index.md) explica o que cada um ensina. Seu projeto fica salvo neste navegador para cada cenário; **Restaurar o cenário** traz o original de volta.
 
+O cenário selecionado fica na URL, por exemplo `?scenario=ai-faq`. Copie o endereço para abrir o mesmo cenário em outro lugar; recarregar e Voltar/Avançar preservam a seleção. Use **Copiar link de compartilhamento** para incluir também o projeto editado e as configurações.
+
 !!! abstract "O que o playground é (e o que não é)"
 
     É um **modelo didático**: algumas dezenas de linhas de matemática por componente, ajustadas para que o comportamento seja realista e explicável — o joelho da curva de latência, um pool de threads que se esgota, um backlog que drena, um estouro de cache. **Não** é um benchmark: capacidades e preços do catálogo são ilustrativos, escolhidos para facilitar as contas. Use-o para raciocinar sobre *formas* e *ordens de grandeza* e depois meça o sistema real (laboratórios).
@@ -311,3 +313,9 @@ Escreva uma instrução curta *Experimente* antes de cada simulador: o que mudar
 - Um cluster Kubernetes é uma contagem de vagas (nós × pods por nó): não há encaixe por CPU e memória, regras de afinidade nem pod disruption budgets e os pods se espalham por igual entre os nós.
 - A latência de rede entre usuários e o sistema não é somada (a latência mostrada é do lado servidor), exceto os +70 ms de chamadas entre regiões e +1 ms por salto num service mesh.
 - Capacidades e preços são números redondos ilustrativos. Quando o playground e um teste de carga discordarem, confie no teste de carga — e descubra por quê.
+
+## Prática de sistemas de IA
+
+O menu inclui oito [labs de sistemas de IA](scenarios/index.md#ai-systems), em ordem: resumo, busca e ferramentas atuais, depois ingestão, isolamento de tenants, pesquisa durável, reembolsos seguros e roteamento. Cada um tem design inicial que falha, critérios, dicas e solução possível.
+
+As verificações de IA rodam ao final usando fixtures sintéticos rotulados. Tempos, tokens, preços e falhas são hipóteses didáticas explícitas, separadas dos gráficos de carga. Nunca chamam modelos pagos e não demonstram qualidade real. Leia o relatório para ver a carga e os resultados dos fixtures.
