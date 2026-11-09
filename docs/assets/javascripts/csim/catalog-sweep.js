@@ -58,10 +58,14 @@
       done: [], perSec: [], sec: null, vus: 0, vuFree: 0, vuPending: false, vuInit: 0, dropped: 0, nextArr: Infinity, ids: 0, timeout: 60,
       rows: [], log: [] };
   }
-  function expo(st, m) { return -Math.log(1 - st.rand()) * m; }
+  // Round transcendental samples to a picosecond (the demands here are ms).
+  // ARM and x64 libm can differ in their last bits; amplified queue ordering
+  // must not change the seeded lesson and its quoted numbers across platforms.
+  function sampleMs(x) { return Math.round(x * 1e9) / 1e9; }
+  function expo(st, m) { return sampleMs(-Math.log(1 - st.rand()) * m); }
   function logn(st, m, s) {
     var u = 1 - st.rand(), v = st.rand();
-    return m * Math.exp(s * Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v) - s * s / 2);
+    return sampleMs(m * Math.exp(s * Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v) - s * s / 2));
   }
   function newReq(st) {
     var list = st.rand() < LAB.listShare, c = list ? CPU.list : CPU.detail;

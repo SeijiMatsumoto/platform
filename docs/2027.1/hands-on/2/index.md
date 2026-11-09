@@ -237,9 +237,9 @@ Open [http://localhost:5665](http://localhost:5665){target="_blank"} while it ru
 
 !!! tip "Try it"
 
-    1. **4 · sweep**: p99 stays flat up to 300 req/s (83 ms), leaves the floor at 400 (159 ms) and hits the wall at 500: 1,364 ms, only 463 req/s served and 1,688 dropped iterations. The page's run gave 224 ms, 2,056 ms, 490 req/s and 410: the same shape, other numbers. At the end of the 600 req/s step, watch-metrics prints the line of step 3 — 200 busy threads, 10 active, 190 waiting — while `docker stats` shows `db` at 700% CPU — all its 7 cores — and `catalog` at 61%.
+    1. **4 · sweep**: p99 stays flat up to 300 req/s (83 ms), leaves the floor at 400 (159 ms) and hits the wall at 500: 1,366 ms, only 463 req/s served and 1,686 dropped iterations. The page's run gave 224 ms, 2,056 ms, 490 req/s and 410: the same shape, other numbers. At the end of the 600 req/s step, watch-metrics prints the line of step 3 — 200 busy threads, 10 active, 190 waiting — while `docker stats` shows `db` at 700% CPU — all its 7 cores — and `catalog` at 61%.
     2. **6 · pool of 30**: the knee does not move — 464 req/s at 500. At 400 req/s the details' p99 falls from 93 ms to 9 ms (they no longer wait behind listings for a connection) and the listings' p99 rises from 210 ms to 289 ms (more of them share the database's cores). In this model the pool was where the queue showed and PostgreSQL was what was full; your machine decides which case you get.
-    3. **1 · closed vs open**: 50 VUs that wait for their answers get 459 req/s with p99 266 ms — inside a 300 ms target, nothing looks wrong. The open model at 500 req/s, on the same service, gives p99 1,336 ms and 1,558 dropped iterations.
+    3. **1 · closed vs open**: 50 VUs that wait for their answers get 459 req/s with p99 266 ms — inside a 300 ms target, nothing looks wrong. The open model at 500 req/s, on the same service, gives p99 1,337 ms and 1,556 dropped iterations.
     4. **7 · stress**: at the peak k6 drops iterations and the VUs climb; after the drop to 150 req/s, the p99 of each second is back under 300 ms 8 s after the drop began — this catalog recovers by itself.
 
 ## Measure it { #measure-it }

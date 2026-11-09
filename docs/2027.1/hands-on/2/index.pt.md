@@ -237,9 +237,9 @@ Abra [http://localhost:5665](http://localhost:5665){target="_blank"} enquanto el
 
 !!! tip "Experimente"
 
-    1. **4 · varredura**: o p99 fica plano até 300 req/s (83 ms), sai do chão em 400 (159 ms) e bate no muro em 500: 1.364 ms, só 463 req/s atendidas e 1.688 iterações descartadas. A execução da página deu 224 ms, 2.056 ms, 490 req/s e 410: a mesma forma, outros números. No fim do passo de 600 req/s, o watch-metrics imprime a linha do passo 3 — 200 threads ocupadas, 10 ativas, 190 esperando — enquanto o `docker stats` mostra o `db` com 700% de CPU — todos os seus 7 núcleos — e o `catalog` com 61%.
+    1. **4 · varredura**: o p99 fica plano até 300 req/s (83 ms), sai do chão em 400 (159 ms) e bate no muro em 500: 1.366 ms, só 463 req/s atendidas e 1.686 iterações descartadas. A execução da página deu 224 ms, 2.056 ms, 490 req/s e 410: a mesma forma, outros números. No fim do passo de 600 req/s, o watch-metrics imprime a linha do passo 3 — 200 threads ocupadas, 10 ativas, 190 esperando — enquanto o `docker stats` mostra o `db` com 700% de CPU — todos os seus 7 núcleos — e o `catalog` com 61%.
     2. **6 · pool de 30**: o joelho não se move — 464 req/s em 500. Em 400 req/s o p99 dos detalhes cai de 93 ms para 9 ms (eles não esperam mais atrás das listagens por uma conexão) e o p99 das listagens sobe de 210 ms para 289 ms (mais delas dividem os núcleos do banco). Neste modelo o pool era onde a fila aparecia e o PostgreSQL era o que estava cheio; a sua máquina decide qual caso você encontra.
-    3. **1 · fechado × aberto**: 50 VUs que esperam as respostas obtêm 459 req/s com p99 de 266 ms — dentro de uma meta de 300 ms, nada parece errado. O modelo aberto a 500 req/s, no mesmo serviço, dá p99 de 1.336 ms e 1.558 iterações descartadas.
+    3. **1 · fechado × aberto**: 50 VUs que esperam as respostas obtêm 459 req/s com p99 de 266 ms — dentro de uma meta de 300 ms, nada parece errado. O modelo aberto a 500 req/s, no mesmo serviço, dá p99 de 1.337 ms e 1.556 iterações descartadas.
     4. **7 · estresse**: no pico o k6 descarta iterações e os VUs sobem; depois da queda para 150 req/s, o p99 de cada segundo volta para baixo de 300 ms 8 s depois do início da queda — este catalog se recupera sozinho.
 
 ## Meça { #measure-it }
