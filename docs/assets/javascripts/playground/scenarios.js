@@ -1198,292 +1198,293 @@
     [E("viewers", "cdn"), E("cdn", "lb"), E("lb", "app"), E("app", "db"), E("app", "ps", { filter: "write" }), E("ps", "rt")])
   });
 
-  /* AI systems: fundamentals before ingestion, isolation, recovery and routing. */
+  /* AI architecture practice: requirements, call ownership and design review. */
   add({
     id: "ai-summarizer",
     group: "ai",
     aiKind: "summarizer",
-    title: T("AI summarizer: the prompt is too large",
-      "Resumo com IA: o prompt é grande demais"),
-    brief: T("Summarize transcripts at 20 requests/s: 90% have 3,000 tokens, 10% have 100,000. The model has a 16,000-token context limit, including output. Today each transcript is one synchronous call. Preserve the twenty labeled decisions, reserve output space, and acknowledge long jobs asynchronously. Short p95 <10 s; long p99 <120 s.",
-      "Resuma transcrições a 20 req/s: 90% têm 3.000 tokens, 10% têm 100.000. O modelo aceita 16.000 tokens, incluindo a saída. Hoje cada transcrição vira uma chamada síncrona. Preserve as vinte decisões rotuladas, reserve espaço para saída e confirme jobs longos de forma assíncrona. p95 curto <10 s; p99 longo <120 s."),
-    settings: {"profile": "load", "targetRps": 20, "readRatio": 1, "seed": 311, "chaos": "off"},
-    duration: 180,
+    architecture: true,
+    practiceRevision: 2,
+    title: {"en": "Meeting transcript summaries"},
+    brief: {"en": "Design a service that turns uploaded meeting transcripts into useful summaries. Some inputs are much longer than a model can accept, and processing may outlast the user’s connection. Show who accepts work, who coordinates processing, and where progress lives."},
+    requirements: ["A user can leave after receiving an acknowledgement and return to find the result.", "Accepted transcripts and completed progress survive a processing-service restart.", "A transcript may contain 100,000 tokens; preserve its key decisions in the final summary.", "Handle bursts of uploads without tying acceptance to model latency."],
+    reviewQuestions: ["What must be persisted before acknowledging the request, and what does that acknowledgement promise?", "Walk through splitting, processing and combining a long transcript. How would you evaluate information loss?", "What is resumed after a crash, how are completed steps identified, and how does the user fetch progress or cancel?"],
+    referenceNotes: "This is one possible responsibility split. An application service can coordinate a fixed workflow; a separate orchestrator is optional. Call numbers show dependency order, with results returning to the caller.",
+    settings: {"profile": "load", "targetRps": 2, "readRatio": 1, "seed": 312, "chaos": "off"},
+    duration: 60,
     design: D([
-      N("users", "client", 60, 180, "users", {"timeoutMs": 120000}),
-      N("api", "app", 260, 180, "AI API", {"threads": 2000}),
-      N("llm", "llmgw", 720, 180, "model", {"quota": 1000})
+      N("users", "client", 80, 180, "users"),
+      N("api", "app", 330, 180, "application"),
+      N("model", "llmgw", 680, 180, "language model")
     ], [
-      E("users", "api"), E("api", "llm")
+      E("users", "api"), E("api", "model")
     ]),
     solution: D([
-      N("users", "client", 60, 180, "users", {"timeoutMs": 120000}),
-      N("api", "app", 260, 180, "AI API", {"threads": 2000, "aiChunkTokens": 8000, "aiAsync": true}),
-      N("llm", "llmgw", 720, 180, "model", {"quota": 150})
+      N("users", "client", 60, 120, "users"),
+      N("api", "app", 280, 120, "request service"),
+      N("input", "objstore", 520, 70, "original inputs"),
+      N("jobs", "queue", 500, 260, "accepted work"),
+      N("processor", "worker", 730, 260, "background processing"),
+      N("model", "llmgw", 1000, 230, "language model"),
+      N("state", "sql", 1000, 400, "progress and results")
     ], [
-      E("users", "api"), E("api", "llm")
+      E("users", "api"), E("api", "input"), E("api", "jobs"), E("jobs", "processor"), E("processor", "input"), E("processor", "model"), E("processor", "state")
     ]),
-    goals: [G("aiContextErrors", "<=", 0), G("aiShortP95", "<", 10), G("aiLongP99", "<", 120), G("aiFactRecall", ">=", 90)],
-    hints: [
-      T("Select AI API: split long inputs into chunks and enable background acknowledgement. A larger context is an alternative, with different cost.", "Selecione AI API: divida entradas longas em trechos e ative confirmação em segundo plano. Um contexto maior é alternativa, com outro custo."),
-      T("Each call needs chunk tokens + reserved output tokens <= context limit. Watch aggregate model calls against quota.", "Cada chamada exige tokens do trecho + saída reservada <= limite de contexto. Observe chamadas agregadas e a cota.")
-    ],
-    aiControls: ["aiChunkTokens", "aiOutputTokens", "aiAsync", "aiContextTokens"]
+    goals: [G("arAsyncAcceptance", ">=", 100), G("arDurableInput", ">=", 100), G("arRecoveryState", ">=", 100), G("arApplicationOwnsModel", ">=", 100)],
+    hints: [{"en": "Trace the user request while the slowest dependency is unavailable. Which responsibilities must still work?"}, {"en": "Try removing the processing service from the diagram. Which state and entry paths remain?"}]
   });
 
   add({
     id: "ai-faq",
     group: "ai",
     aiKind: "faq",
-    title: T("FAQ assistant: stop sending the whole handbook",
-      "Assistente FAQ: pare de enviar o manual inteiro"),
-    brief: T("Answer employee questions from a 500-page handbook. Today every request sends 100,000 handbook tokens. Retrieve the relevant sections, cite evidence, and abstain when there is no answer. The fixture has 80 answerable and 20 unanswerable questions; each answer needs three source sections.",
-      "Responda perguntas de funcionários a partir de um manual de 500 páginas. Hoje cada pedido envia 100.000 tokens do manual. Recupere seções relevantes, cite evidências e abstenha-se sem resposta. O fixture tem 80 perguntas respondíveis e 20 sem resposta; cada resposta exige três seções."),
-    settings: {"profile": "load", "targetRps": 20, "readRatio": 1, "seed": 312, "chaos": "off"},
-    duration: 180,
+    architecture: true,
+    practiceRevision: 2,
+    title: {"en": "Handbook assistant"},
+    brief: {"en": "Design an employee assistant for a large, changing company handbook. Answers should use relevant handbook passages and identify their sources. A handbook update and an employee question are different workloads: show both paths and who coordinates them."},
+    requirements: ["Questions should not require sending the entire 500-page handbook to a model.", "Answers identify their evidence; missing evidence produces an explicit insufficient-information response.", "Updating the handbook must not block employees who are asking questions.", "The application remains responsible for assembling context and returning the answer."],
+    reviewQuestions: ["Walk through ingestion separately from answering: what is stored, what is derived, and when?", "Who receives retrieved passages and constructs the generation request? Explain the order of those calls.", "How would you measure retrieval recall, citation support and unanswerable-question behavior using labeled cases?"],
+    referenceNotes: "This is one possible responsibility split. An application service can coordinate a fixed workflow; a separate orchestrator is optional. Call numbers show dependency order, with results returning to the caller.",
+    settings: {"profile": "load", "targetRps": 2, "readRatio": 1, "seed": 313, "chaos": "off"},
+    duration: 60,
     design: D([
-      N("users", "client", 60, 180, "users", {"timeoutMs": 120000}),
-      N("api", "app", 260, 180, "AI API", {"threads": 2000}),
-      N("llm", "llmgw", 720, 180, "model", {"quota": 1000})
+      N("users", "client", 80, 180, "users"),
+      N("api", "app", 330, 180, "application"),
+      N("model", "llmgw", 680, 180, "language model")
     ], [
-      E("users", "api"), E("api", "llm")
+      E("users", "api"), E("api", "model")
     ]),
     solution: D([
-      N("users", "client", 60, 180, "users", {"timeoutMs": 120000}),
-      N("api", "app", 260, 180, "AI API", {"threads": 2000}),
-      N("llm", "llmgw", 720, 180, "model", {"quota": 1000}),
-      N("memory", "memory", 450, 300, "retrieval", {"aiTopK": 3, "aiCitations": true, "aiAbstain": true}),
-      N("index", "vectordb", 700, 360, "handbook", {})
+      N("users", "client", 50, 120, "employees"),
+      N("api", "app", 280, 120, "answer coordinator"),
+      N("retrieval", "memory", 540, 210, "retrieval"),
+      N("index", "vectordb", 800, 210, "handbook index"),
+      N("model", "llmgw", 540, 70, "answer generation"),
+      N("updates", "scheduler", 50, 450, "handbook updates"),
+      N("jobs", "queue", 280, 450, "indexing work"),
+      N("indexer", "worker", 540, 450, "indexing service"),
+      N("originals", "objstore", 800, 360, "handbook originals"),
+      N("embed", "llmgw", 800, 520, "embedding model")
     ], [
-      E("users", "api"), E("api", "memory"), E("memory", "index"), E("memory", "llm")
+      E("users", "api"), E("api", "retrieval"), E("retrieval", "index"), E("api", "model"), E("updates", "jobs"), E("jobs", "indexer"), E("indexer", "originals"), E("indexer", "embed"), E("indexer", "index")
     ]),
-    goals: [G("aiRetrievalRecall", ">=", 90), G("aiSupportedClaims", ">=", 95), G("aiAbstention", ">=", 90), G("aiTokenReduction", ">=", 80)],
-    hints: [
-      T("Add Memory Fabric connected to a Vector DB. Select Memory Fabric to change retrieved sections, source evidence and abstention.", "Adicione Memory Fabric conectado a Vector DB. Selecione Memory Fabric para ajustar seções, evidência e abstenção."),
-      T("Retrieval recall counts expected sections found. Expected source coverage also requires source evidence and penalizes answering unanswerable questions. Neither checks generated answer text.", "O recall conta seções esperadas recuperadas. A cobertura das fontes esperadas também exige evidências e penaliza responder perguntas sem resposta. Nenhuma verifica o texto gerado.")
-    ],
-    aiControls: ["aiTopK", "aiCitations", "aiAbstain"]
+    goals: [G("arEvidenceFlow", ">=", 100), G("arApplicationOwnsModel", ">=", 100), G("arSeparateIngestion", ">=", 100)],
+    hints: [{"en": "Name the owner of the final answer. Follow every piece of evidence back to its source."}, {"en": "Consider whether an employee query should perform the same work as a handbook update."}]
   });
 
   add({
     id: "ai-order-status",
     group: "ai",
     aiKind: "order",
-    title: T("Order-status assistant: use a tool for live facts",
-      "Assistente de pedidos: use uma ferramenta para fatos atuais"),
-    brief: T("Tell customers where their orders are. The model knows policy, not live order status. Add an authenticated order lookup. Handle forbidden orders, malformed arguments and tool outages without guessing. Every reported status must come from a successful read for the requesting user.",
-      "Informe onde estão os pedidos. O modelo conhece políticas, não o estado atual. Adicione consulta autenticada. Trate pedidos proibidos, argumentos inválidos e falhas sem inventar. Todo estado informado deve vir de uma leitura válida para o usuário."),
-    settings: {"profile": "load", "targetRps": 20, "readRatio": 1, "seed": 313, "chaos": "off"},
-    duration: 180,
+    architecture: true,
+    practiceRevision: 2,
+    title: {"en": "Live order support"},
+    brief: {"en": "Customers ask where their orders are. Company policy changes slowly, but order status changes constantly and each customer may only see their own orders. Design how the assistant obtains current facts and handles unavailable business systems."},
+    requirements: ["A reported order status comes from the current business system, not model memory.", "One customer cannot obtain another customer’s order information.", "A business-system timeout results in an honest unavailable response.", "Keep business rules owned by the application or order service."],
+    reviewQuestions: ["Where is customer identity obtained, and who enforces order ownership?", "Walk through the live read, the returned facts and the final answer. Do you need an agent loop for this workflow?", "How do malformed arguments, a missing order and a timed-out read produce different outcomes?"],
+    referenceNotes: "This is one possible responsibility split. An application service can coordinate a fixed workflow; a separate orchestrator is optional. Call numbers show dependency order, with results returning to the caller.",
+    settings: {"profile": "load", "targetRps": 2, "readRatio": 1, "seed": 314, "chaos": "off"},
+    duration: 60,
     design: D([
-      N("users", "client", 60, 180, "users", {"timeoutMs": 120000}),
-      N("api", "app", 260, 180, "AI API", {"threads": 2000}),
-      N("llm", "llmgw", 720, 180, "model", {"quota": 1000}),
-      N("orders", "sql", 740, 380, "orders", {})
+      N("users", "client", 80, 180, "users"),
+      N("api", "app", 330, 180, "application"),
+      N("model", "llmgw", 680, 180, "language model"),
+      N("orders", "sql", 700, 400, "existing order records")
     ], [
-      E("users", "api"), E("api", "llm")
+      E("users", "api"), E("api", "model")
     ]),
     solution: D([
-      N("users", "client", 60, 180, "users", {"timeoutMs": 120000}),
-      N("api", "app", 260, 180, "AI API", {"threads": 2000}),
-      N("llm", "llmgw", 720, 180, "model", {"quota": 1000}),
-      N("orders", "sql", 740, 380, "orders", {}),
-      N("tools", "toolreg", 470, 350, "order lookup", {"aiAuthorize": true, "aiValidate": true, "aiEvidence": true, "aiAttempts": 2})
+      N("users", "client", 50, 180, "customers"),
+      N("api", "app", 280, 180, "support coordinator"),
+      N("identity", "auth", 520, 50, "customer identity"),
+      N("lookup", "toolreg", 520, 220, "order adapter"),
+      N("orders", "microservice", 760, 220, "order service"),
+      N("db", "sql", 1000, 220, "orders"),
+      N("model", "llmgw", 520, 380, "answer generation")
     ], [
-      E("users", "api"), E("api", "tools"), E("tools", "orders"), E("tools", "llm")
+      E("users", "api"), E("api", "identity"), E("api", "lookup"), E("lookup", "orders"), E("orders", "db"), E("api", "model")
     ]),
-    goals: [G("aiWrongStatus", "<=", 0), G("aiUnauthorized", "<=", 0), G("aiToolP95", "<", 3), G("aiToolAttempts", "<=", 2)],
-    hints: [
-      T("Connect the API to Tool Registry, then to the order database. Enforce authorization and validate arguments in application code.", "Conecte a API ao Tool Registry e ao banco de pedidos. Aplique autorização e valide argumentos no código."),
-      T("Only successful tool results may become status answers. Bound attempts and explicitly report unavailability.", "Só resultados válidos podem virar respostas sobre estado. Limite tentativas e informe indisponibilidade.")
-    ],
-    aiControls: ["aiAuthorize", "aiValidate", "aiEvidence", "aiAttempts"]
+    goals: [G("arLiveRead", ">=", 100), G("arApplicationOwnsModel", ">=", 100)],
+    hints: [{"en": "Separate facts that the model can explain from facts that must be read at request time."}, {"en": "Consider whether a tool adapter and a business service have the same responsibilities."}]
   });
 
   add({
     id: "ai-ingestion",
     group: "ai",
     aiKind: "ingestion",
-    title: T("Document ingestion: the index falls behind",
-      "Ingestão de documentos: o índice fica para trás"),
-    brief: T("Customers upload 10,000 documents over five minutes. Parse, chunk, embed and index each document; embeddings allow 100 calls/s. A worker crashes at t=120 s. Acknowledge uploads within 500 ms, index 99% within ten minutes, and recover without lost documents or duplicate chunks.",
-      "Clientes enviam 10.000 documentos em cinco minutos. Extraia, divida, gere embeddings e indexe; o provedor permite 100 chamadas/s. Um worker cai em t=120 s. Confirme uploads em 500 ms, indexe 99% em dez minutos e recupere sem perdas nem trechos duplicados."),
-    settings: {"profile": "load", "targetRps": 34, "readRatio": 1, "seed": 314, "chaos": "off"},
-    duration: 180,
+    architecture: true,
+    practiceRevision: 2,
+    title: {"en": "Searchable document uploads"},
+    brief: {"en": "Customers upload 10,000 documents in five minutes. Make each accepted document searchable, with progress visible to the customer. Processing dependencies have finite quotas and processing services can restart midway through a document."},
+    requirements: ["Acknowledge accepted uploads within 500 ms without promising that indexing is already finished.", "Accepted originals and processing progress survive a worker restart.", "Ninety-nine percent of accepted documents become searchable within ten minutes.", "Retried work must not create duplicate visible chunks or leave a partially updated document active."],
+    reviewQuestions: ["Show original storage, derived representations and the boundary between accepting and processing a document.", "Who performs each index write, and how does a document become visible only when ready?", "Define document/chunk identities, checkpoints, retry behavior and how you would prove the ten-minute target under quota limits."],
+    referenceNotes: "This is one possible responsibility split. An application service can coordinate a fixed workflow; a separate orchestrator is optional. Call numbers show dependency order, with results returning to the caller.",
+    settings: {"profile": "load", "targetRps": 2, "readRatio": 1, "seed": 315, "chaos": "off"},
+    duration: 60,
     design: D([
-      N("users", "client", 60, 180, "uploads", {}),
-      N("api", "app", 250, 180, "upload API", {}),
-      N("originals", "objstore", 460, 80, "originals", {}),
-      N("worker", "worker", 460, 260, "parse + chunk", {"threads": 2}),
-      N("llm", "llmgw", 690, 260, "embeddings", {"quota": 100, "latencyMs": 100}),
-      N("index", "vectordb", 910, 260, "index", {})
+      N("users", "client", 80, 180, "users"),
+      N("api", "app", 330, 180, "application"),
+      N("model", "llmgw", 680, 180, "language model")
     ], [
-      E("users", "api"), E("api", "originals"), E("api", "worker"), E("worker", "llm"), E("llm", "index")
+      E("users", "api"), E("api", "model")
     ]),
     solution: D([
-      N("users", "client", 60, 180, "uploads", {}),
-      N("api", "app", 250, 180, "upload API", {"aiAsync": true}),
-      N("originals", "objstore", 460, 80, "originals", {}),
-      N("worker", "worker", 460, 260, "parse + chunk", {"threads": 20, "aiChunkTokens": 1000, "aiCheckpoint": true, "aiIdempotent": true}),
-      N("llm", "llmgw", 690, 260, "embeddings", {"quota": 100, "latencyMs": 100}),
-      N("index", "vectordb", 910, 260, "index", {}),
-      N("jobs", "queue", 270, 390, "document jobs", {})
+      N("users", "client", 60, 120, "users"),
+      N("api", "app", 280, 120, "request service"),
+      N("input", "objstore", 520, 70, "original inputs"),
+      N("jobs", "queue", 500, 260, "accepted work"),
+      N("processor", "worker", 730, 260, "background processing"),
+      N("model", "llmgw", 1000, 230, "embeddings"),
+      N("state", "sql", 1000, 400, "progress and results"),
+      N("index", "vectordb", 1000, 80, "search index")
     ], [
-      E("users", "api"), E("api", "originals"), E("worker", "llm"), E("llm", "index"), E("api", "jobs"), E("jobs", "worker")
+      E("users", "api"), E("api", "input"), E("api", "jobs"), E("jobs", "processor"), E("processor", "input"), E("processor", "model"), E("processor", "index"), E("processor", "state")
     ]),
-    goals: [G("aiAckP99", "<", 0.5), G("aiIndexP99", "<", 600), G("aiIndexErrors", "<=", 0), G("aiQuotaPeak", "<=", 100)],
-    hints: [
-      T("Store the original and enqueue durable work before acknowledging. Worker concurrency cannot raise the embedding quota.", "Armazene o original e enfileire trabalho durável antes de confirmar. Concorrência não aumenta a cota de embeddings."),
-      T("Use stable chunk IDs for idempotent indexing and persist progress; replaying an unfinished step must be safe.", "Use IDs estáveis para indexação idempotente e persista progresso; repetir etapa interrompida deve ser seguro.")
-    ],
-    aiControls: ["aiAsync", "aiChunkTokens", "aiCheckpoint", "aiIdempotent"],
-    events: [{"t": 120, "type": "crash", "target": "worker", "durationS": 5, "label": {"en": "ingestion worker restarts", "pt": "worker de ingestão reinicia"}}]
+    goals: [G("arAsyncAcceptance", ">=", 100), G("arDurableInput", ">=", 100), G("arRecoveryState", ">=", 100), G("arIndexWriter", ">=", 100)],
+    hints: [{"en": "Write down what “accepted” and “searchable” mean as separate states."}, {"en": "Trace a failure after some derived data has been written but before the job reports completion."}]
   });
 
   add({
     id: "ai-tenant-search",
     group: "ai",
     aiKind: "tenant",
-    title: T("Enterprise search: the answer crosses a tenant boundary",
-      "Busca empresarial: a resposta cruza o limite do tenant"),
-    brief: T("One assistant serves 100 companies with a shared index and answer cache. Enforce the requesting user’s document permissions. At t=60 s, revoke access; subsequent queries must stop revealing that document within 30 seconds. Test same-question cache hits across identities as well as retrieval.",
-      "Um assistente atende 100 empresas com índice e cache compartilhados. Aplique permissões do usuário. Em t=60 s, revogue acesso; em até 30 s, consultas devem parar de revelar o documento. Teste cache da mesma pergunta entre identidades e a busca."),
-    settings: {"profile": "load", "targetRps": 100, "readRatio": 1, "seed": 315, "chaos": "off"},
-    duration: 180,
+    architecture: true,
+    practiceRevision: 2,
+    title: {"en": "Company knowledge assistant"},
+    brief: {"en": "One knowledge assistant serves 100 companies. Employees have different document permissions, and access can change after documents have been indexed. Companies sometimes ask identical questions. Design the answering path so employees receive current, authorized answers."},
+    requirements: ["No company or employee may receive another user’s restricted evidence or answer.", "Revoking document access must affect answers within 30 seconds.", "Both newly generated and reused answers obey the current user’s access rights.", "Evidence selection and generation remain coordinated by application code."],
+    reviewQuestions: ["How does identity reach every evidence access, and where is authorization enforced?", "What permission metadata lives in the index, where is its source of truth, and how do revocations propagate?", "If you reuse answers, describe cache scope, permission changes and a cross-tenant cache-hit test. Omitting answer caching is valid."],
+    referenceNotes: "The application owns identity/access checks, cache lookup, evidence retrieval and generation. A cache hit returns after access checks; a miss continues to retrieval and generation. The cache does not call the model. Boxes are logical responsibilities, so these functions and stores may share deployments. ACL and cache-key semantics still require review.",
+    settings: {"profile": "load", "targetRps": 2, "readRatio": 1, "seed": 316, "chaos": "off"},
+    duration: 60,
     design: D([
-      N("users", "client", 60, 180, "users", {"timeoutMs": 120000}),
-      N("api", "app", 260, 180, "AI API", {"threads": 2000}),
-      N("llm", "llmgw", 720, 180, "model", {"quota": 1000}),
-      N("memory", "memory", 440, 300, "retrieval", {"aiTopK": 3}),
-      N("index", "vectordb", 700, 380, "shared index", {}),
-      N("cache", "cache", 450, 60, "answer cache", {})
+      N("users", "client", 80, 180, "users"),
+      N("api", "app", 330, 180, "application"),
+      N("model", "llmgw", 680, 180, "language model")
     ], [
-      E("users", "api"), E("api", "cache"), E("cache", "memory"), E("memory", "index"), E("memory", "llm")
+      E("users", "api"), E("api", "model")
     ]),
     solution: D([
-      N("users", "client", 60, 180, "users", {"timeoutMs": 120000}),
-      N("api", "app", 260, 180, "AI API", {"threads": 2000}),
-      N("llm", "llmgw", 720, 180, "model", {"quota": 1000}),
-      N("memory", "memory", 440, 300, "retrieval", {"aiTopK": 3, "aiTenantFilter": true, "aiPermissionTtl": 20}),
-      N("index", "vectordb", 700, 380, "shared index", {}),
-      N("cache", "cache", 450, 60, "answer cache", {"aiScopedCache": true})
+      N("users", "client", 60, 180, "employees"),
+      N("api", "app", 300, 180, "knowledge application"),
+      N("identity", "auth", 560, 50, "user identity"),
+      N("permissions", "sql", 560, 200, "access records"),
+      N("cache", "cache", 560, 380, "authorized answers"),
+      N("retrieval", "memory", 820, 270, "retrieval"),
+      N("index", "vectordb", 1060, 270, "company documents"),
+      N("model", "llmgw", 820, 70, "generation")
     ], [
-      E("users", "api"), E("api", "cache"), E("cache", "memory"), E("memory", "index"), E("memory", "llm")
+      E("users", "api"), E("api", "identity"), E("api", "permissions"), E("api", "cache"), E("api", "retrieval"), E("retrieval", "index"), E("api", "model")
     ]),
-    goals: [G("aiUnauthorized", "<=", 0), G("aiRevocationS", "<=", 30), G("aiPermittedRecall", ">=", 95), G("aiRetrievalP95", "<", 0.3)],
-    hints: [
-      T("Memory Fabric must filter by tenant AND ACL before returning evidence. More relevant does not mean authorized.", "Memory Fabric deve filtrar por tenant E ACL antes de retornar evidências. Relevância não implica autorização."),
-      T("Scope answer caches by tenant, user and permission version; bound permission-cache TTL. Measure retrieval separately from generation latency.", "Isole caches por tenant, usuário e versão de permissão; limite TTL de permissões. Meça a busca separada da geração.")
-    ],
-    aiControls: ["aiTopK", "aiTenantFilter", "aiPermissionTtl", "aiScopedCache"]
+    goals: [G("arEvidenceFlow", ">=", 100), G("arApplicationOwnsModel", ">=", 100), G("arCachedAccess", ">=", 100)],
+    hints: [{"en": "Follow a question that is identical to one asked by an employee in another company."}, {"en": "Draw the path taken when an answer is already available, rather than only the cache-miss path."}]
   });
 
   add({
     id: "ai-research",
     group: "ai",
     aiKind: "research",
-    title: T("Research agent: survive a restart halfway through",
-      "Agente de pesquisa: sobreviva a um reinício"),
-    brief: T("Generate reports needing ten model calls and twenty source fetches. The worker restarts at t=90 s. Finish accepted jobs, retain completed evidence, and reconnect users through persisted job state. Complete within five minutes without exceeding ten model calls or twenty fetches per job.",
-      "Gere relatórios que exigem dez chamadas ao modelo e vinte buscas de fontes. O worker reinicia em t=90 s. Conclua jobs aceitos, retenha evidências e reconecte usuários pelo estado persistido. Termine em cinco minutos sem exceder dez chamadas ou vinte buscas por job."),
-    settings: {"profile": "load", "targetRps": 1, "readRatio": 1, "seed": 316, "chaos": "off"},
-    duration: 180,
+    architecture: true,
+    practiceRevision: 2,
+    title: {"en": "Long-running research reports"},
+    brief: {"en": "Users request research reports that take several minutes and involve external sources. A user may disconnect, and the processing service may restart halfway through a report. Design acceptance, execution, progress and recovery."},
+    requirements: ["Accepted reports remain discoverable after a disconnected request or processing restart.", "Retain completed evidence and resume unfinished work instead of silently starting over.", "Provide explicit completion, failure and cancellation states.", "Bound source fetching, model usage and total execution time."],
+    reviewQuestions: ["What is the durable job identity, and what state is stored after each completed step?", "Which operations can safely repeat, and which require reconciliation? Explain recovery after a crash between a side effect and a checkpoint.", "Who decides when the report is complete, and how are missing evidence, budgets and cancellation enforced?"],
+    referenceNotes: "This is one possible responsibility split. An application service can coordinate a fixed workflow; a separate orchestrator is optional. Call numbers show dependency order, with results returning to the caller.",
+    settings: {"profile": "load", "targetRps": 2, "readRatio": 1, "seed": 317, "chaos": "off"},
+    duration: 60,
     design: D([
-      N("users", "client", 60, 180, "research requests", {"timeoutMs": 120000}),
-      N("agent", "orchestrator", 280, 180, "research agent", {"steps": 1, "threads": 100}),
-      N("llm", "llmgw", 530, 80, "model", {"latencyMs": 6000, "quota": 1000}),
-      N("tools", "toolreg", 530, 300, "research tools", {}),
-      N("sources", "thirdparty", 760, 300, "source fetch", {})
+      N("users", "client", 80, 180, "users"),
+      N("api", "app", 330, 180, "application"),
+      N("model", "llmgw", 680, 180, "language model")
     ], [
-      E("users", "agent"), E("agent", "llm"), E("agent", "tools"), E("tools", "sources")
+      E("users", "api"), E("api", "model")
     ]),
     solution: D([
-      N("users", "client", 60, 180, "research requests", {"timeoutMs": 120000}),
-      N("agent", "orchestrator", 280, 180, "research agent", {"steps": 1, "threads": 100, "aiCheckpoint": true, "aiMaxCalls": 10, "aiMaxFetches": 20}),
-      N("llm", "llmgw", 530, 80, "model", {"latencyMs": 6000, "quota": 1000}),
-      N("tools", "toolreg", 530, 300, "research tools", {}),
-      N("sources", "thirdparty", 760, 300, "source fetch", {}),
-      N("state", "sql", 300, 400, "job + step state", {})
+      N("users", "client", 60, 120, "users"),
+      N("api", "app", 280, 120, "request service"),
+      N("input", "sql", 520, 70, "job records"),
+      N("jobs", "queue", 500, 260, "accepted work"),
+      N("processor", "orchestrator", 730, 260, "report workflow"),
+      N("model", "llmgw", 1000, 230, "language model"),
+      N("state", "sql", 1000, 400, "progress and results"),
+      N("tools", "toolreg", 1000, 550, "source adapters"),
+      N("sources", "thirdparty", 1240, 550, "external sources")
     ], [
-      E("users", "agent"), E("agent", "llm"), E("agent", "tools"), E("tools", "sources"), E("agent", "state")
+      E("users", "api"), E("api", "input"), E("api", "jobs"), E("jobs", "processor"), E("processor", "input"), E("processor", "model"), E("processor", "state"), E("processor", "tools"), E("tools", "sources")
     ]),
-    goals: [G("aiJobCompletion", ">=", 99), G("aiJobP99", "<", 300), G("aiRepeatedSteps", "<=", 1), G("aiBudgetViolations", "<=", 0)],
-    hints: [
-      T("Persist job IDs, completed steps and evidence in SQL; enable checkpoints on the orchestrator. Streaming alone cannot recover a job.", "Persista IDs, etapas e evidências no SQL; ative checkpoints no orquestrador. Streaming sozinho não recupera jobs."),
-      T("Set explicit call/fetch budgets. Setting limits below required work prevents completion rather than making research cheaper.", "Defina orçamentos de chamadas e buscas. Limites menores que o necessário impedem a conclusão.")
-    ],
-    aiControls: ["aiCheckpoint", "aiMaxCalls", "aiMaxFetches"],
-    events: [{"t": 90, "type": "crash", "target": "agent", "durationS": 5, "label": {"en": "research worker restarts", "pt": "worker de pesquisa reinicia"}}]
+    goals: [G("arAsyncAcceptance", ">=", 100), G("arDurableInput", ">=", 100), G("arRecoveryState", ">=", 100), G("arApplicationOwnsModel", ">=", 100)],
+    hints: [{"en": "An open stream is a presentation mechanism. What other state must exist for reconnection?"}, {"en": "Distinguish the workflow’s state from the data returned by its dependencies."}]
   });
 
   add({
     id: "ai-refunds",
     group: "ai",
     aiKind: "refund",
-    title: T("Refund agent: the timeout that pays twice",
-      "Agente de reembolso: o timeout que paga duas vezes"),
-    brief: T("A support agent issues approved refunds. Twenty of 100 payment requests commit before their reply times out; both the agent and runner may retry. Prevent duplicate effects, require recorded authorization, and reconcile uncertain results within two minutes.",
-      "Um agente emite reembolsos aprovados. Vinte de 100 pagamentos efetivam antes do timeout; agente e executor podem repetir. Evite efeitos duplicados, exija autorização registrada e reconcilie resultados incertos em dois minutos."),
-    settings: {"profile": "load", "targetRps": 5, "readRatio": 1, "seed": 317, "chaos": "off"},
-    duration: 180,
+    architecture: true,
+    practiceRevision: 2,
+    title: {"en": "Customer refunds"},
+    brief: {"en": "A support assistant can help customers request refunds. Some payment requests commit successfully but time out before returning a result, and both the assistant and execution infrastructure may retry. Design the boundary between a model’s proposal and an authorized business action."},
+    requirements: ["Only an authorized, approved action may produce a refund.", "Repeating an operation must not issue another refund for the same intended action.", "A timeout must not be interpreted as proof that no payment occurred.", "Uncertain results remain visible and are reconciled or escalated."],
+    reviewQuestions: ["Who validates the proposed amount, customer, order and approval before execution?", "Where is the stable operation identity created and stored? Trace a committed payment followed by a timeout and retry.", "What must be queried or reconciled before telling the customer that the refund succeeded or failed?"],
+    referenceNotes: "This is one possible responsibility split. An application service can coordinate a fixed workflow; a separate orchestrator is optional. Call numbers show dependency order, with results returning to the caller.",
+    settings: {"profile": "load", "targetRps": 2, "readRatio": 1, "seed": 318, "chaos": "off"},
+    duration: 60,
     design: D([
-      N("users", "client", 60, 180, "refund requests", {}),
-      N("agent", "orchestrator", 270, 180, "support agent", {"steps": 1}),
-      N("llm", "llmgw", 510, 60, "model", {"quota": 1000}),
-      N("tools", "toolreg", 510, 290, "refund tool", {}),
-      N("payment", "payment", 760, 290, "payment provider", {})
+      N("users", "client", 80, 180, "users"),
+      N("api", "app", 330, 180, "application"),
+      N("model", "llmgw", 680, 180, "language model"),
+      N("payment", "payment", 960, 180, "payment provider")
     ], [
-      E("users", "agent"), E("agent", "llm"), E("agent", "tools"), E("tools", "payment")
+      E("users", "api"), E("api", "model"), E("model", "payment")
     ]),
     solution: D([
-      N("users", "client", 60, 180, "refund requests", {}),
-      N("agent", "orchestrator", 270, 180, "support agent", {"steps": 1}),
-      N("llm", "llmgw", 510, 60, "model", {"quota": 1000}),
-      N("tools", "toolreg", 510, 290, "refund tool", {"aiAuthorize": true, "aiIdempotent": true, "aiReconcileS": 60}),
-      N("payment", "payment", 760, 290, "payment provider", {}),
-      N("ledger", "sql", 750, 440, "authorization + operations", {})
+      N("users", "client", 50, 180, "customers"),
+      N("api", "app", 280, 180, "support coordinator"),
+      N("model", "llmgw", 530, 70, "proposed action"),
+      N("business", "microservice", 530, 300, "refund service"),
+      N("identity", "auth", 800, 180, "customer identity"),
+      N("ledger", "sql", 800, 320, "approval and operation records"),
+      N("payment", "payment", 800, 470, "payment provider")
     ], [
-      E("users", "agent"), E("agent", "llm"), E("agent", "tools"), E("tools", "payment"), E("tools", "ledger")
+      E("users", "api"), E("api", "model"), E("api", "business"), E("business", "identity"), E("business", "ledger"), E("business", "payment")
     ]),
-    goals: [G("aiDuplicateRefunds", "<=", 0), G("aiUnauthorized", "<=", 0), G("aiReconcileS", "<=", 120), G("aiRefundCompletion", ">=", 99)],
-    hints: [
-      T("Use a stable operation ID across retries and a durable ledger. A fresh ID makes a retry look like a new refund.", "Use ID estável entre tentativas e registro durável. ID novo faz a repetição parecer novo reembolso."),
-      T("Record authorization for the exact action and reconcile uncertain provider outcomes; a timeout does not mean no payment happened.", "Registre autorização da ação exata e reconcilie resultados incertos; timeout não significa ausência de pagamento.")
-    ],
-    aiControls: ["aiAuthorize", "aiIdempotent", "aiReconcileS"]
+    goals: [G("arActionBoundary", ">=", 100), G("arActionCoordination", ">=", 100)],
+    hints: [{"en": "Separate proposing an action from having the authority to execute it."}, {"en": "Walk through the exact moment at which payment state becomes uncertain."}]
   });
 
   add({
     id: "ai-model-routing",
     group: "ai",
     aiKind: "routing",
-    title: T("Model routing: meet the budget without losing quality",
-      "Roteamento de modelos: cumpra o orçamento sem perder qualidade"),
-    brief: T("Triage 50 tickets/s. Most are easy; some require stronger reasoning. Today every ticket uses the expensive model. Route selectively and preserve valid classifications during a 30-second provider outage. Prices and labeled outcomes in this lesson are synthetic, not provider benchmarks.",
-      "Classifique 50 tickets/s. A maioria é simples; alguns exigem raciocínio maior. Hoje todos usam o modelo caro. Roteie seletivamente e preserve classificações válidas durante falha de 30 s do provedor. Preços e resultados rotulados são sintéticos, não benchmarks."),
-    settings: {"profile": "load", "targetRps": 50, "readRatio": 1, "seed": 318, "chaos": "off"},
-    duration: 180,
+    architecture: true,
+    practiceRevision: 2,
+    title: {"en": "Ticket triage with multiple models"},
+    brief: {"en": "An AI service classifies incoming support tickets. Most are straightforward, some are ambiguous, and a provider may become unavailable. Design how model choice, result checking and recovery fit together while controlling cost and preserving classification quality."},
+    requirements: ["Avoid making every ticket pay for the strongest model or for every available model.", "Ambiguous results can be escalated rather than accepted blindly.", "A provider outage must not make every classification path unavailable.", "Measure cost per accepted outcome and quality on the same labeled workload."],
+    reviewQuestions: ["What evidence determines initial model selection and escalation? Why is this more than blind load balancing?", "Who validates the returned classification and decides to accept, retry, escalate or stop?", "What happens when either provider fails? Explain independence of fallbacks, bounded retries and how you would test quality and cost."],
+    referenceNotes: "The application calls a routing boundary, receives one selected model result, then validates it. API Gateway represents exclusive dispatch among same-type model targets in the load engine; the selection/escalation policy is a design-review responsibility, not something a blind load balancer proves.",
+    settings: {"profile": "load", "targetRps": 2, "readRatio": 1, "seed": 319, "chaos": "off"},
+    duration: 60,
     design: D([
-      N("users", "client", 60, 180, "users", {"timeoutMs": 120000}),
-      N("api", "app", 260, 180, "AI API", {"threads": 2000}),
-      N("llm", "llmgw", 720, 180, "model", {"quota": 1000})
+      N("users", "client", 80, 180, "users"),
+      N("api", "app", 330, 180, "application"),
+      N("model", "llmgw", 680, 180, "language model")
     ], [
-      E("users", "api"), E("api", "llm")
+      E("users", "api"), E("api", "model")
     ]),
     solution: D([
-      N("users", "client", 60, 180, "users", {"timeoutMs": 120000}),
-      N("api", "app", 260, 180, "AI API", {"threads": 2000}),
-      N("llm", "llmgw", 720, 180, "model", {"quota": 1000, "aiRoute": true, "aiEscalate": true, "aiValidate": true, "fallbackModel": true})
+      N("users", "client", 50, 180, "incoming tickets"),
+      N("api", "app", 280, 180, "triage application"),
+      N("router", "apigw", 530, 120, "model routing service"),
+      N("small", "llmgw", 800, 50, "small model"),
+      N("strong", "llmgw", 800, 220, "strong model"),
+      N("validation", "safety", 530, 370, "result validation")
     ], [
-      E("users", "api"), E("api", "llm")
+      E("users", "api"), E("api", "router"), E("router", "small"), E("router", "strong"), E("api", "validation")
     ]),
-    goals: [G("aiClassification", ">=", 95), G("aiCostPerTicket", "<", 0.005), G("aiRoutingP95", "<", 3), G("aiValidCompletion", ">=", 99)],
-    hints: [
-      T("Select LLM Gateway: route easy tickets to the small model, escalate uncertain cases and validate output schemas.", "Selecione LLM Gateway: roteie tickets simples ao modelo pequeno, escale casos incertos e valide esquemas."),
-      T("Enable a fallback for provider outages. Compare cost per accepted ticket and quality; HTTP success alone is insufficient.", "Ative fallback para falhas do provedor. Compare custo e qualidade; sucesso HTTP é insuficiente.")
-    ],
-    aiControls: ["aiRoute", "aiEscalate", "aiValidate"],
-    events: [{"t": 60, "type": "crash", "target": "llm", "durationS": 30, "label": {"en": "primary model provider unavailable", "pt": "provedor principal indisponível"}}]
+    goals: [G("arModelChoice", ">=", 100), G("arAlternateModel", ">=", 100), G("arValidationBoundary", ">=", 100)],
+    hints: [{"en": "Draw who chooses a model separately from the model itself."}, {"en": "Trace one easy ticket, one uncertain result and one provider outage. Should they follow identical paths?"}]
   });
 
   /* the classic interview problems (case-study pages) form their own group in the menu */

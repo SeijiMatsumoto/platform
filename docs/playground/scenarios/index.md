@@ -55,14 +55,14 @@ Every scenario of the [System Design Playground](../index.md) is a small lab: a 
 | [Web crawler: slow sites hold the fetchers](#web-crawler) | I/O-bound workers are sized by threads ÷ latency; timeouts bound what a slow site can take |
 | [Post search: index asynchronously](#post-search) | Indexing leaves the write path through a log and bulk indexers; repeated queries are cached |
 | [Live comments: a million viewers polling](#live-comments) | Identical polls are answered at the edge; new comments are pushed through pub/sub |
-| [AI summarizer: the prompt is too large](#ai-summarizer) | Each call needs chunk tokens + reserved output tokens <= context limit. Watch aggregate model calls against quota. |
-| [FAQ assistant: stop sending the whole handbook](#ai-faq) | Retrieval recall counts expected sections found. Expected source coverage also requires source evidence and penalizes answering unanswerable questions. Neither checks generated answer text. |
-| [Order-status assistant: use a tool for live facts](#ai-order-status) | Only successful tool results may become status answers. Bound attempts and explicitly report unavailability. |
-| [Document ingestion: the index falls behind](#ai-ingestion) | Use stable chunk IDs for idempotent indexing and persist progress; replaying an unfinished step must be safe. |
-| [Enterprise search: the answer crosses a tenant boundary](#ai-tenant-search) | Scope answer caches by tenant, user and permission version; bound permission-cache TTL. Measure retrieval separately from generation latency. |
-| [Research agent: survive a restart halfway through](#ai-research) | Set explicit call/fetch budgets. Setting limits below required work prevents completion rather than making research cheaper. |
-| [Refund agent: the timeout that pays twice](#ai-refunds) | Record authorization for the exact action and reconcile uncertain provider outcomes; a timeout does not mean no payment happened. |
-| [Model routing: meet the budget without losing quality](#ai-model-routing) | Enable a fallback for provider outages. Compare cost per accepted ticket and quality; HTTP success alone is insufficient. |
+| [Meeting transcript summaries](#ai-summarizer) | A user can leave after receiving an acknowledgement and return to find the result. |
+| [Handbook assistant](#ai-faq) | Questions should not require sending the entire 500-page handbook to a model. |
+| [Live order support](#ai-order-status) | A reported order status comes from the current business system, not model memory. |
+| [Searchable document uploads](#ai-ingestion) | Acknowledge accepted uploads within 500 ms without promising that indexing is already finished. |
+| [Company knowledge assistant](#ai-tenant-search) | No company or employee may receive another user’s restricted evidence or answer. |
+| [Long-running research reports](#ai-research) | Accepted reports remain discoverable after a disconnected request or processing restart. |
+| [Customer refunds](#ai-refunds) | Only an authorized, approved action may produce a refund. |
+| [Ticket triage with multiple models](#ai-model-routing) | Avoid making every ticket pay for the strongest model or for every available model. |
 
 ## Monolith: find the breaking point { #monolith }
 
@@ -773,96 +773,202 @@ A live video has 100 000 viewers; each asks "any new comments?" every 5 s (20 00
 
 ## AI systems { #ai-systems }
 
-Work through these in order: summarization → retrieval → tools → ingestion → permissions → recovery → side effects → routing. Each starts with a failing design. Select a component to edit its AI controls; use **Show a possible solution** to compare architectures.
+These are architecture exercises. Start with the incomplete canvas, identify responsibilities, draw both request and background paths, then choose **Check architecture**. Arrows are calls whose results return to the caller. Numbers show call order when calls execute; explain conditional branches in your notes. Select an edge and choose **Call earlier** or **Call later** changes the order.
 
-!!! note "What is measured"
+!!! note "What is graded"
 
-    AI goals replay deterministic synthetic fixtures **after the run finishes**. They do not call a model or benchmark real quality. Load charts and sampled latency remain the existing fluid model; fixture timings, prices and scripted failures are a separate teaching model. The report explains the workload. A passing fixture is evidence about this model, not a production guarantee.
+    Automated checks inspect call ownership, ordering, durable boundaries and reachability after removing a component. They do not run LLMs or prove authorization, idempotency, retrieval quality, transactions or routing quality. Complete the **Design review** questions even when graph checks pass. Explain your design in the provided text area; it is saved and included in JSON exports and share links, but is not automatically graded.
 
-### 1. AI summarizer: the prompt is too large { #ai-summarizer }
+The AI exercises omit performance knobs and monthly cost charts. Use the other Playground scenarios for traffic and capacity experiments. Hints and reference diagrams stay hidden until requested. The reference is one valid responsibility split, not an exact diagram to reproduce; a separate orchestrator is optional.
 
-Summarize transcripts at 20 requests/s: 90% have 3,000 tokens, 10% have 100,000. The model has a 16,000-token context limit, including output. Today each transcript is one synchronous call. Preserve the twenty labeled decisions, reserve output space, and acknowledge long jobs asynchronously. Short p95 <10 s; long p99 <120 s.
+### 1. Meeting transcript summaries { #ai-summarizer }
 
-- **Initial design:** users → AI API; AI API → model.
-- **Acceptance checks:** `aiContextErrors` <= 0 · `aiShortP95` < 10 s · `aiLongP99` < 120 s · `aiFactRecall` >= 90%.
-- **Try:** Select AI API: split long inputs into chunks and enable background acknowledgement. A larger context is an alternative, with different cost.
-- **Observe:** Each call needs chunk tokens + reserved output tokens <= context limit. Watch aggregate model calls against quota.
+Design a service that turns uploaded meeting transcripts into useful summaries. Some inputs are much longer than a model can accept, and processing may outlast the user’s connection. Show who accepts work, who coordinates processing, and where progress lives.
 
-<div class="sdp" data-scenario="ai-summarizer" data-mode="compact" data-height="420"></div>
+**Acceptance requirements**
 
-### 2. FAQ assistant: stop sending the whole handbook { #ai-faq }
+- A user can leave after receiving an acknowledgement and return to find the result.
+- Accepted transcripts and completed progress survive a processing-service restart.
+- A transcript may contain 100,000 tokens; preserve its key decisions in the final summary.
+- Handle bursts of uploads without tying acceptance to model latency.
 
-Answer employee questions from a 500-page handbook. Today every request sends 100,000 handbook tokens. Retrieve the relevant sections, cite evidence, and abstain when there is no answer. The fixture has 80 answerable and 20 unanswerable questions; each answer needs three source sections.
+<div class="sdp" data-scenario="ai-summarizer" data-mode="compact" data-height="460"></div>
 
-- **Initial design:** users → AI API; AI API → model.
-- **Acceptance checks:** `aiRetrievalRecall` >= 90% · Expected source coverage >= 95% · `aiAbstention` >= 90% · `aiTokenReduction` >= 80%.
-- **Try:** Add Memory Fabric connected to a Vector DB. Select Memory Fabric to change retrieved sections, source evidence and abstention.
-- **Observe:** Retrieval recall counts expected sections found. Expected source coverage also requires source evidence and penalizes answering unanswerable questions. Neither checks generated answer text.
+??? question "Design review — not automatically graded"
 
-<div class="sdp" data-scenario="ai-faq" data-mode="compact" data-height="420"></div>
+    1. What must be persisted before acknowledging the request, and what does that acknowledgement promise?
+    2. Walk through splitting, processing and combining a long transcript. How would you evaluate information loss?
+    3. What is resumed after a crash, how are completed steps identified, and how does the user fetch progress or cancel?
 
-### 3. Order-status assistant: use a tool for live facts { #ai-order-status }
+??? tip "Hints"
 
-Tell customers where their orders are. The model knows policy, not live order status. Add an authenticated order lookup. Handle forbidden orders, malformed arguments and tool outages without guessing. Every reported status must come from a successful read for the requesting user.
+    1. Trace the user request while the slowest dependency is unavailable. Which responsibilities must still work?
+    2. Try removing the processing service from the diagram. Which state and entry paths remain?
 
-- **Initial design:** users → AI API; AI API → model.
-- **Acceptance checks:** `aiWrongStatus` <= 0 · `aiUnauthorized` <= 0 · `aiToolP95` < 3 s · `aiToolAttempts` <= 2.
-- **Try:** Connect the API to Tool Registry, then to the order database. Enforce authorization and validate arguments in application code.
-- **Observe:** Only successful tool results may become status answers. Bound attempts and explicitly report unavailability.
+### 2. Handbook assistant { #ai-faq }
 
-<div class="sdp" data-scenario="ai-order-status" data-mode="compact" data-height="420"></div>
+Design an employee assistant for a large, changing company handbook. Answers should use relevant handbook passages and identify their sources. A handbook update and an employee question are different workloads: show both paths and who coordinates them.
 
-### 4. Document ingestion: the index falls behind { #ai-ingestion }
+**Acceptance requirements**
 
-Customers upload 10,000 documents over five minutes. Parse, chunk, embed and index each document; embeddings allow 100 calls/s. A worker crashes at t=120 s. Acknowledge uploads within 500 ms, index 99% within ten minutes, and recover without lost documents or duplicate chunks.
+- Questions should not require sending the entire 500-page handbook to a model.
+- Answers identify their evidence; missing evidence produces an explicit insufficient-information response.
+- Updating the handbook must not block employees who are asking questions.
+- The application remains responsible for assembling context and returning the answer.
 
-- **Initial design:** uploads → upload API; upload API → originals; upload API → parse + chunk; parse + chunk → embeddings; embeddings → index.
-- **Acceptance checks:** `aiAckP99` < 0.5 s · `aiIndexP99` < 600 s · `aiIndexErrors` <= 0 · `aiQuotaPeak` <= 100 calls/s.
-- **Try:** Store the original and enqueue durable work before acknowledging. Worker concurrency cannot raise the embedding quota.
-- **Observe:** Use stable chunk IDs for idempotent indexing and persist progress; replaying an unfinished step must be safe.
+<div class="sdp" data-scenario="ai-faq" data-mode="compact" data-height="460"></div>
 
-<div class="sdp" data-scenario="ai-ingestion" data-mode="compact" data-height="420"></div>
+??? question "Design review — not automatically graded"
 
-### 5. Enterprise search: the answer crosses a tenant boundary { #ai-tenant-search }
+    1. Walk through ingestion separately from answering: what is stored, what is derived, and when?
+    2. Who receives retrieved passages and constructs the generation request? Explain the order of those calls.
+    3. How would you measure retrieval recall, citation support and unanswerable-question behavior using labeled cases?
 
-One assistant serves 100 companies with a shared index and answer cache. Enforce the requesting user’s document permissions. At t=60 s, revoke access; subsequent queries must stop revealing that document within 30 seconds. Test same-question cache hits across identities as well as retrieval.
+??? tip "Hints"
 
-- **Initial design:** users → AI API; AI API → answer cache; answer cache → retrieval; retrieval → shared index; retrieval → model.
-- **Acceptance checks:** `aiUnauthorized` <= 0 · `aiRevocationS` <= 30 s · `aiPermittedRecall` >= 95% · `aiRetrievalP95` < 0.3 s.
-- **Try:** Memory Fabric must filter by tenant AND ACL before returning evidence. More relevant does not mean authorized.
-- **Observe:** Scope answer caches by tenant, user and permission version; bound permission-cache TTL. Measure retrieval separately from generation latency.
+    1. Name the owner of the final answer. Follow every piece of evidence back to its source.
+    2. Consider whether an employee query should perform the same work as a handbook update.
 
-<div class="sdp" data-scenario="ai-tenant-search" data-mode="compact" data-height="420"></div>
+### 3. Live order support { #ai-order-status }
 
-### 6. Research agent: survive a restart halfway through { #ai-research }
+Customers ask where their orders are. Company policy changes slowly, but order status changes constantly and each customer may only see their own orders. Design how the assistant obtains current facts and handles unavailable business systems.
 
-Generate reports needing ten model calls and twenty source fetches. The worker restarts at t=90 s. Finish accepted jobs, retain completed evidence, and reconnect users through persisted job state. Complete within five minutes without exceeding ten model calls or twenty fetches per job.
+**Acceptance requirements**
 
-- **Initial design:** research requests → research agent; research agent → model; research agent → research tools; research tools → source fetch.
-- **Acceptance checks:** `aiJobCompletion` >= 99% · `aiJobP99` < 300 s · `aiRepeatedSteps` <= 1 · `aiBudgetViolations` <= 0.
-- **Try:** Persist job IDs, completed steps and evidence in SQL; enable checkpoints on the orchestrator. Streaming alone cannot recover a job.
-- **Observe:** Set explicit call/fetch budgets. Setting limits below required work prevents completion rather than making research cheaper.
+- A reported order status comes from the current business system, not model memory.
+- One customer cannot obtain another customer’s order information.
+- A business-system timeout results in an honest unavailable response.
+- Keep business rules owned by the application or order service.
 
-<div class="sdp" data-scenario="ai-research" data-mode="compact" data-height="420"></div>
+<div class="sdp" data-scenario="ai-order-status" data-mode="compact" data-height="460"></div>
 
-### 7. Refund agent: the timeout that pays twice { #ai-refunds }
+??? question "Design review — not automatically graded"
 
-A support agent issues approved refunds. Twenty of 100 payment requests commit before their reply times out; both the agent and runner may retry. Prevent duplicate effects, require recorded authorization, and reconcile uncertain results within two minutes.
+    1. Where is customer identity obtained, and who enforces order ownership?
+    2. Walk through the live read, the returned facts and the final answer. Do you need an agent loop for this workflow?
+    3. How do malformed arguments, a missing order and a timed-out read produce different outcomes?
 
-- **Initial design:** refund requests → support agent; support agent → model; support agent → refund tool; refund tool → payment provider.
-- **Acceptance checks:** `aiDuplicateRefunds` <= 0 · `aiUnauthorized` <= 0 · `aiReconcileS` <= 120 s · `aiRefundCompletion` >= 99%.
-- **Try:** Use a stable operation ID across retries and a durable ledger. A fresh ID makes a retry look like a new refund.
-- **Observe:** Record authorization for the exact action and reconcile uncertain provider outcomes; a timeout does not mean no payment happened.
+??? tip "Hints"
 
-<div class="sdp" data-scenario="ai-refunds" data-mode="compact" data-height="420"></div>
+    1. Separate facts that the model can explain from facts that must be read at request time.
+    2. Consider whether a tool adapter and a business service have the same responsibilities.
 
-### 8. Model routing: meet the budget without losing quality { #ai-model-routing }
+### 4. Searchable document uploads { #ai-ingestion }
 
-Triage 50 tickets/s. Most are easy; some require stronger reasoning. Today every ticket uses the expensive model. Route selectively and preserve valid classifications during a 30-second provider outage. Prices and labeled outcomes in this lesson are synthetic, not provider benchmarks.
+Customers upload 10,000 documents in five minutes. Make each accepted document searchable, with progress visible to the customer. Processing dependencies have finite quotas and processing services can restart midway through a document.
 
-- **Initial design:** users → AI API; AI API → model.
-- **Acceptance checks:** `aiClassification` >= 95% · `aiCostPerTicket` < 0.005 USD · `aiRoutingP95` < 3 s · `aiValidCompletion` >= 99%.
-- **Try:** Select LLM Gateway: route easy tickets to the small model, escalate uncertain cases and validate output schemas.
-- **Observe:** Enable a fallback for provider outages. Compare cost per accepted ticket and quality; HTTP success alone is insufficient.
+**Acceptance requirements**
 
-<div class="sdp" data-scenario="ai-model-routing" data-mode="compact" data-height="420"></div>
+- Acknowledge accepted uploads within 500 ms without promising that indexing is already finished.
+- Accepted originals and processing progress survive a worker restart.
+- Ninety-nine percent of accepted documents become searchable within ten minutes.
+- Retried work must not create duplicate visible chunks or leave a partially updated document active.
+
+<div class="sdp" data-scenario="ai-ingestion" data-mode="compact" data-height="460"></div>
+
+??? question "Design review — not automatically graded"
+
+    1. Show original storage, derived representations and the boundary between accepting and processing a document.
+    2. Who performs each index write, and how does a document become visible only when ready?
+    3. Define document/chunk identities, checkpoints, retry behavior and how you would prove the ten-minute target under quota limits.
+
+??? tip "Hints"
+
+    1. Write down what “accepted” and “searchable” mean as separate states.
+    2. Trace a failure after some derived data has been written but before the job reports completion.
+
+### 5. Company knowledge assistant { #ai-tenant-search }
+
+One knowledge assistant serves 100 companies. Employees have different document permissions, and access can change after documents have been indexed. Companies sometimes ask identical questions. Design the answering path so employees receive current, authorized answers.
+
+**Acceptance requirements**
+
+- No company or employee may receive another user’s restricted evidence or answer.
+- Revoking document access must affect answers within 30 seconds.
+- Both newly generated and reused answers obey the current user’s access rights.
+- Evidence selection and generation remain coordinated by application code.
+
+<div class="sdp" data-scenario="ai-tenant-search" data-mode="compact" data-height="460"></div>
+
+??? question "Design review — not automatically graded"
+
+    1. How does identity reach every evidence access, and where is authorization enforced?
+    2. What permission metadata lives in the index, where is its source of truth, and how do revocations propagate?
+    3. If you reuse answers, describe cache scope, permission changes and a cross-tenant cache-hit test. Omitting answer caching is valid.
+
+??? tip "Hints"
+
+    1. Follow a question that is identical to one asked by an employee in another company.
+    2. Draw the path taken when an answer is already available, rather than only the cache-miss path.
+
+### 6. Long-running research reports { #ai-research }
+
+Users request research reports that take several minutes and involve external sources. A user may disconnect, and the processing service may restart halfway through a report. Design acceptance, execution, progress and recovery.
+
+**Acceptance requirements**
+
+- Accepted reports remain discoverable after a disconnected request or processing restart.
+- Retain completed evidence and resume unfinished work instead of silently starting over.
+- Provide explicit completion, failure and cancellation states.
+- Bound source fetching, model usage and total execution time.
+
+<div class="sdp" data-scenario="ai-research" data-mode="compact" data-height="460"></div>
+
+??? question "Design review — not automatically graded"
+
+    1. What is the durable job identity, and what state is stored after each completed step?
+    2. Which operations can safely repeat, and which require reconciliation? Explain recovery after a crash between a side effect and a checkpoint.
+    3. Who decides when the report is complete, and how are missing evidence, budgets and cancellation enforced?
+
+??? tip "Hints"
+
+    1. An open stream is a presentation mechanism. What other state must exist for reconnection?
+    2. Distinguish the workflow’s state from the data returned by its dependencies.
+
+### 7. Customer refunds { #ai-refunds }
+
+A support assistant can help customers request refunds. Some payment requests commit successfully but time out before returning a result, and both the assistant and execution infrastructure may retry. Design the boundary between a model’s proposal and an authorized business action.
+
+**Acceptance requirements**
+
+- Only an authorized, approved action may produce a refund.
+- Repeating an operation must not issue another refund for the same intended action.
+- A timeout must not be interpreted as proof that no payment occurred.
+- Uncertain results remain visible and are reconciled or escalated.
+
+<div class="sdp" data-scenario="ai-refunds" data-mode="compact" data-height="460"></div>
+
+??? question "Design review — not automatically graded"
+
+    1. Who validates the proposed amount, customer, order and approval before execution?
+    2. Where is the stable operation identity created and stored? Trace a committed payment followed by a timeout and retry.
+    3. What must be queried or reconciled before telling the customer that the refund succeeded or failed?
+
+??? tip "Hints"
+
+    1. Separate proposing an action from having the authority to execute it.
+    2. Walk through the exact moment at which payment state becomes uncertain.
+
+### 8. Ticket triage with multiple models { #ai-model-routing }
+
+An AI service classifies incoming support tickets. Most are straightforward, some are ambiguous, and a provider may become unavailable. Design how model choice, result checking and recovery fit together while controlling cost and preserving classification quality.
+
+**Acceptance requirements**
+
+- Avoid making every ticket pay for the strongest model or for every available model.
+- Ambiguous results can be escalated rather than accepted blindly.
+- A provider outage must not make every classification path unavailable.
+- Measure cost per accepted outcome and quality on the same labeled workload.
+
+<div class="sdp" data-scenario="ai-model-routing" data-mode="compact" data-height="460"></div>
+
+??? question "Design review — not automatically graded"
+
+    1. What evidence determines initial model selection and escalation? Why is this more than blind load balancing?
+    2. Who validates the returned classification and decides to accept, retry, escalate or stop?
+    3. What happens when either provider fails? Explain independence of fallbacks, bounded retries and how you would test quality and cost.
+
+??? tip "Hints"
+
+    1. Draw who chooses a model separately from the model itself.
+    2. Trace one easy ticket, one uncertain result and one provider outage. Should they follow identical paths?

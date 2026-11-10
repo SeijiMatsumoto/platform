@@ -1,138 +1,115 @@
 #!/usr/bin/env node
-/* Behavioral checks of the explicit AI fixtures, separate from load simulation.
- * node scripts/playground/test_ai.mjs
- */
+// Architecture invariants and fault reachability, not real LLM/authorization evals.
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
-const require = createRequire(import.meta.url);
-const dir = "../../docs/assets/javascripts/playground/";
+const require = createRequire(import.meta.url), dir = "../../docs/assets/javascripts/playground/";
 const AI = require(dir + "ai.js"), SC = require(dir + "scenarios.js"), E = require(dir + "engine.js");
+const ids = ["ai-summarizer", "ai-faq", "ai-order-status", "ai-ingestion", "ai-tenant-search", "ai-research", "ai-refunds", "ai-model-routing"];
 let passed = 0;
 function test(name, fn) { fn(); passed++; console.log("ok " + name); }
-function replay(id, mutate = () => {}, initial = false) {
-  const s = SC.get(id), d = structuredClone(initial ? s.design : s.solution);
-  mutate(d);
-  return AI.evaluate(E.normalizeDesign(d), s, s.settings).metrics;
+function review(id, mutate = () => {}, initial = false) {
+  const sc = SC.get(id), d = structuredClone(initial ? sc.design : sc.solution); mutate(d);
+  return AI.evaluate(E.normalizeDesign(d), sc, sc.settings);
 }
-function node(d, id) { return d.nodes.find(n => n.id === id); }
-function disconnect(d, id) { d.edges = d.edges.filter(e => e.to !== id); }
-const ids = ["ai-summarizer", "ai-faq", "ai-order-status", "ai-ingestion", "ai-tenant-search", "ai-research", "ai-refunds", "ai-model-routing"];
-test("eight English AI scenarios in the intended progression", () => {
-  assert.deepEqual(SC.LIST.filter(s => s.group === "ai").map(s => s.id), ids);
-  for (const id of ids) {
-    const s = SC.get(id);
-    assert.ok(s.title.en && s.brief.en);
-    for (const hint of s.hints) assert.ok(hint.en);
-    for (const initial of [false, true]) {
-      const m = replay(id, undefined, initial);
-      Object.values(m).forEach(n => assert.ok(Number.isFinite(n)));
-      assert.deepEqual(m, replay(id, undefined, initial), "fixture replay must be deterministic");
-      const goals = s.goals.map(g => E.checkGoal(g, m).pass);
-      assert.equal(initial ? goals.some(x => !x) : goals.every(Boolean), true, id);
-    }
-  }
-});
-test("summary limits include reserved output; truncation cannot preserve missing facts", () => {
-  assert.equal(replay(ids[0]).aiContextErrors, 0);
-  assert.ok(replay(ids[0], d => node(d, "api").params.aiOutputTokens = 16000).aiContextErrors > 0);
-  assert.ok(replay(ids[0], d => node(d, "api").params.aiChunkTokens = 20000).aiFactRecall < 100);
-  assert.ok(replay(ids[0], d => node(d, "llm").params.quota = 1).aiShortP95 > 10);
-  assert.ok(replay(ids[0], d => node(d, "api").params.aiAsync = false).aiLongP99 > 120);
-});
-test("FAQ source recall, expected source coverage and no-answer behavior are independent", () => {
-  assert.ok(replay(ids[1], d => node(d, "memory").params.aiTopK = 1).aiRetrievalRecall < 90);
-  assert.equal(replay(ids[1], d => node(d, "memory").params.aiCitations = false).aiSupportedClaims, 0);
-  assert.equal(replay(ids[1], d => node(d, "memory").params.aiAbstain = false).aiAbstention, 0);
-  assert.equal(replay(ids[1], d => disconnect(d, "index")).aiRetrievalRecall, 0);
-});
-test("order tools enforce ACLs, evidence, validation and bounded attempts", () => {
-  assert.ok(replay(ids[2], d => node(d, "tools").params.aiAuthorize = false).aiUnauthorized > 0);
-  assert.ok(replay(ids[2], d => node(d, "tools").params.aiEvidence = false).aiWrongStatus > 0);
-  assert.ok(replay(ids[2], d => node(d, "tools").params.aiValidate = false).aiWrongStatus > 0);
-  assert.ok(replay(ids[2], d => node(d, "tools").params.aiAttempts = 5).aiToolP95 > 3);
-  assert.ok(replay(ids[2], d => disconnect(d, "orders")).aiWrongStatus > 0);
-});
-test("ingestion needs durable originals, connected queue and stable chunk IDs", () => {
-  assert.ok(replay(ids[3], d => disconnect(d, "jobs")).aiIndexErrors > 0);
-  assert.ok(replay(ids[3], d => disconnect(d, "originals")).aiIndexErrors > 0);
-  assert.ok(replay(ids[3], d => node(d, "worker").params.aiIdempotent = false).aiIndexErrors > 0);
-  assert.ok(replay(ids[3], d => node(d, "llm").params.quota = 1).aiIndexP99 > 600);
-  assert.ok(replay(ids[3], d => node(d, "api").params.aiAsync = false).aiAckP99 > 0.5);
-});
-test("tenant retrieval permissions cannot be replaced by cache scoping, or vice versa", () => {
-  assert.ok(replay(ids[4], d => node(d, "memory").params.aiTenantFilter = false).aiUnauthorized > 0);
-  assert.ok(replay(ids[4], d => node(d, "cache").params.aiScopedCache = false).aiUnauthorized > 0);
-  assert.ok(replay(ids[4], d => node(d, "memory").params.aiPermissionTtl = 120).aiRevocationS > 30);
-  assert.ok(replay(ids[4], d => node(d, "memory").params.aiTopK = 1).aiPermittedRecall < 95);
-  assert.ok(replay(ids[4], d => disconnect(d, "index")).aiUnauthorized > 0);
-});
-test("research resumes only from connected durable state; tiny budgets do not finish jobs", () => {
-  assert.equal(replay(ids[5], d => disconnect(d, "state")).aiJobCompletion, 0);
-  assert.ok(replay(ids[5], d => node(d, "agent").params.aiCheckpoint = false).aiRepeatedSteps > 1);
-  assert.equal(replay(ids[5], d => node(d, "agent").params.aiMaxCalls = 1).aiJobCompletion, 0);
-  assert.ok(replay(ids[5], d => node(d, "agent").params.aiMaxFetches = 40).aiBudgetViolations > 0);
-  assert.equal(replay(ids[5], d => disconnect(d, "sources")).aiJobCompletion, 0);
-});
-test("refund ledger deduplicates committed-but-timed-out operations and records approvals", () => {
-  assert.equal(replay(ids[6]).aiDuplicateRefunds, 0);
-  assert.equal(replay(ids[6], d => node(d, "tools").params.aiIdempotent = false).aiDuplicateRefunds, 20);
-  assert.equal(replay(ids[6], d => node(d, "tools").params.aiAuthorize = false).aiUnauthorized, 10);
-  assert.equal(replay(ids[6], d => disconnect(d, "ledger")).aiRefundCompletion, 0);
-  assert.ok(replay(ids[6], d => node(d, "tools").params.aiReconcileS = 300).aiRefundCompletion < 99);
-});
-test("routing savings alone cannot satisfy quality, schema and outage requirements", () => {
-  assert.ok(replay(ids[7], d => node(d, "llm").params.aiRoute = false).aiCostPerTicket > 0.005);
-  assert.ok(replay(ids[7], d => node(d, "llm").params.aiEscalate = false).aiClassification < 95);
-  assert.ok(replay(ids[7], d => node(d, "llm").params.aiValidate = false).aiValidCompletion < 99);
-  assert.ok(replay(ids[7], d => node(d, "llm").params.fallbackModel = false).aiValidCompletion < 99);
-  assert.equal(replay(ids[7], d => disconnect(d, "llm")).aiValidCompletion, 0);
-});
-test("AI metrics remain pending until completion and appear in engine reports", () => {
-  const sc = SC.get(ids[1]), sim = E.create(sc.solution, { ...sc.settings, duration: 1 }, { scenario: sc });
-  assert.equal(sim.stats().aiRetrievalRecall, undefined);
-  assert.ok(sim.goals().every(g => !g.pass));
-  while (!sim.done) sim.step(10);
-  assert.equal(sim.stats().aiRetrievalRecall, 100);
-  assert.ok(sim.report().ai.evidence[0].en);
-  assert.ok(sim.goals().every(g => g.pass));
-});
-test("zero traffic and excluding filters cannot pass the AI fixtures", () => {
+const metrics = (id, mutate, initial) => review(id, mutate, initial).metrics;
+const node = (d, id) => d.nodes.find(n => n.id === id);
+const remove = (d, id) => { d.nodes = d.nodes.filter(n => n.id !== id); d.edges = d.edges.filter(e => e.from !== id && e.to !== id); };
+const edge = (from, to) => ({ id: from + "-" + to, from, to, params: {} });
+const covered = id => Object.values(metrics(id)).every(value => value === 100);
+test("all eight exercises start incomplete, pass graph checks in one reference, and still require review", () => {
+  assert.deepEqual(SC.LIST.filter(s => s.architecture).map(s => s.id), ids);
   for (const id of ids) {
     const sc = SC.get(id);
-    for (const params of [{ ratio: 0 }, { ratio: 0.5 }, { filter: "write" }]) {
-      const metrics = replay(id, d => d.edges.forEach(e => Object.assign(e.params, params)));
-      assert.ok(sc.goals.some(g => !E.checkGoal(g, metrics).pass), id + " falsely passed disabled flow");
-    }
+    assert.ok(sc.requirements.length >= 3 && sc.reviewQuestions.length >= 3 && sc.hints.length);
+    assert.equal(sc.aiControls, undefined);
+    assert.ok(sc.design.nodes.length <= 4, "minimal starting design: " + id);
+    assert.ok(sc.solution.nodes.every(n => Object.keys(n.params).every(key => !key.startsWith("ai"))));
+    assert.ok(Object.values(metrics(id, undefined, true)).some(value => value === 0), id);
+    assert.ok(covered(id), id);
+    assert.equal(review(id).reviewRequired, true);
+    assert.equal(review(id).failures.length, 0);
+    assert.deepEqual(review(id), review(id), "deterministic graph review");
   }
-  const sc = SC.get("ai-faq"), d = structuredClone(sc.solution);
-  d.edges.find(e => e.to === "index").params.ratio = 0;
-  assert.equal(AI.evaluate(d, sc, sc.settings).metrics.aiRetrievalRecall, 0);
 });
-test("failed checks carry bounded English witness cases; passing solutions do not", () => {
+test("the previous checkboxes cannot change architecture scores", () => {
+  for (const id of ids) for (const value of [true, false]) {
+    const changed = metrics(id, d => d.nodes.forEach(n => Object.assign(n.params, { aiAuthorize: value, aiTenantFilter: value, aiScopedCache: value, aiCitations: value, aiCheckpoint: value, aiAsync: value, aiIdempotent: value })));
+    assert.deepEqual(changed, metrics(id));
+  }
+});
+test("handbook retrieval returns to its coordinator before generation", () => {
+  assert.equal(metrics("ai-faq", d => { d.edges = d.edges.filter(e => e.id !== "api-model"); d.edges.push(edge("retrieval", "model")); }).arApplicationOwnsModel, 0);
+  assert.equal(metrics("ai-faq", d => { const a = d.edges.findIndex(e => e.id === "api-model"), b = d.edges.findIndex(e => e.id === "api-retrieval"); [d.edges[a], d.edges[b]] = [d.edges[b], d.edges[a]]; }).arEvidenceFlow, 0);
+  assert.equal(metrics("ai-faq", d => remove(d, "index")).arEvidenceFlow, 0);
+  assert.equal(metrics("ai-faq", d => d.edges.push(edge("api", "indexer"))).arSeparateIngestion, 0);
+});
+test("a separate orchestrator is optional and searchable SQL is a valid retrieval dependency", () => {
+  assert.equal(metrics("ai-faq", d => { node(d, "api").type = "orchestrator"; node(d, "index").type = "sql"; }).arEvidenceFlow, 100);
+  assert.ok(Object.values(metrics("ai-faq", d => { remove(d, "retrieval"); d.edges.unshift(edge("api", "index")); node(d, "index").type = "sql"; })).every(v => v === 100), "direct database retrieval is valid without a separate retrieval service");
+  assert.equal(metrics("ai-faq", d => { d.nodes.push({ id: "query-embedding", type: "llmgw", x: 900, y: 150, params: {} }); d.edges.push(edge("retrieval", "query-embedding")); }).arApplicationOwnsModel, 100, "retrieval may own a distinct query-embedding dependency");
   for (const id of ids) {
-    const sc = SC.get(id);
-    const result = AI.evaluate(E.normalizeDesign(sc.design), sc, sc.settings);
-    assert.ok(result.failures.length, id + " has no failure explanation");
-    for (const f of result.failures) assert.ok(f.caseId && f.en && f.metric);
-    assert.equal(AI.evaluate(E.normalizeDesign(sc.solution), sc, sc.settings).failures.length, 0);
+    const renamed = metrics(id, d => {
+      const names = new Map(d.nodes.map((n, i) => [n.id, "component-" + i]));
+      d.nodes.forEach(n => { n.id = names.get(n.id); n.label = "my component"; });
+      d.edges.forEach((e, i) => { e.from = names.get(e.from); e.to = names.get(e.to); e.id = "link-" + i; });
+    });
+    assert.deepEqual(renamed, metrics(id), "not a node-ID or label matcher: " + id);
   }
-  const sc = SC.get("ai-refunds"), result = AI.evaluate(E.normalizeDesign(sc.design), sc, sc.settings);
-  assert.ok(result.failures.some(f => f.caseId === "refund-1" && f.metric === "aiDuplicateRefunds"));
 });
-test("completed results become stale after settings or design edits and require a fresh run", () => {
-  const sc = SC.get("ai-summarizer");
-  const run = () => { const sim = E.create(sc.solution, { ...sc.settings, duration: 1 }, { scenario: sc }); while (!sim.done) sim.step(10); return sim; };
-  for (const edit of [sim => sim.setSettings({ targetRps: 2000000 }), sim => sim.setDesign(sc.design)]) {
-    const sim = run(); assert.ok(sim.stats().aiShortP95 < 10);
-    edit(sim);
-    assert.equal(sim.resultsStale, true);
-    assert.equal(sim.stats().aiShortP95, undefined);
-    assert.equal(sim.report().stale, true);
-    assert.ok(sim.goals().every(g => !g.pass && g.value === undefined));
+test("background placement matters: a queue after processing cannot protect acceptance", () => {
+  for (const id of ["ai-summarizer", "ai-ingestion", "ai-research"]) {
+    assert.equal(metrics(id, d => { d.edges = d.edges.filter(e => e.id !== "api-jobs" && e.id !== "jobs-processor"); d.edges.push(edge("api", "processor"), edge("processor", "jobs")); }).arAsyncAcceptance, 0);
+    assert.equal(metrics(id, d => { remove(d, "state"); if (id === "ai-research") d.edges = d.edges.filter(e => e.id !== "processor-input"); }).arRecoveryState, 0);
+    assert.equal(metrics(id, d => { d.edges = d.edges.filter(e => e.id !== "api-input"); d.edges.push(edge("api", "input")); }).arDurableInput, 0);
+    assert.equal(metrics(id, d => d.edges.push(edge("api", "model"))).arAsyncAcceptance, 0);
+    assert.equal(metrics(id, d => node(d, "processor").type = "app").arRecoveryState, 100);
+    assert.equal(metrics(id, d => {
+      if (id === "ai-research") d.edges = d.edges.filter(e => e.id !== "processor-input");
+      d.nodes.push({ id: "state-service", type: "microservice", x: 900, y: 400, params: {} });
+      d.edges = d.edges.filter(e => e.id !== "processor-state"); d.edges.push(edge("processor", "state-service"), edge("state-service", "state"));
+    }).arRecoveryState, 100, "a state-service abstraction is valid");
   }
-  const unchanged = run(); unchanged.setSettings({ targetRps: sc.settings.targetRps });
-  assert.equal(!!unchanged.resultsStale, false);
-  assert.equal(run().report().stale, false);
 });
-
+test("the indexing service owns writes rather than the embedding provider", () => {
+  assert.equal(metrics("ai-ingestion", d => { d.edges = d.edges.filter(e => e.id !== "processor-index"); d.edges.push(edge("model", "index")); }).arIndexWriter, 0);
+  assert.equal(metrics("ai-ingestion", d => { const a = d.edges.findIndex(e => e.id === "processor-index"), b = d.edges.findIndex(e => e.id === "processor-model"); [d.edges[a], d.edges[b]] = [d.edges[b], d.edges[a]]; }).arIndexWriter, 0);
+});
+test("order data is read before composition; identity implementation requires design review", () => {
+  assert.equal(metrics("ai-order-status", d => remove(d, "db")).arLiveRead, 0);
+  assert.equal(metrics("ai-order-status", d => remove(d, "identity")).arLiveRead, 100, "inline identity enforcement is not rejected");
+  assert.equal(metrics("ai-order-status", d => { d.edges = d.edges.filter(e => e.id !== "api-model"); d.edges.unshift(edge("api", "model")); }).arLiveRead, 0);
+});
+test("cached responses cannot bypass the access boundary; omitting answer caching is valid", () => {
+  assert.equal(metrics("ai-tenant-search", d => { d.edges = d.edges.filter(e => e.id !== "api-cache"); d.edges.unshift(edge("users", "cache")); }).arCachedAccess, 0);
+  assert.ok(Object.values(metrics("ai-tenant-search", d => { remove(d, "identity"); remove(d, "permissions"); })).every(v => v === 100), "the graph cannot grade authorization semantics; inline or index-enforced policies require review");
+  assert.ok(Object.values(metrics("ai-tenant-search", d => remove(d, "cache"))).every(value => value === 100));
+});
+test("a parallel model-to-payment bypass fails even when a valid business service exists", () => {
+  assert.equal(metrics("ai-refunds", d => d.edges.push(edge("model", "payment"))).arActionBoundary, 0);
+  assert.equal(metrics("ai-refunds", d => { d.edges = d.edges.filter(e => e.id !== "api-model"); d.edges.push(edge("api", "model")); }).arActionCoordination, 0);
+  assert.equal(metrics("ai-refunds", d => remove(d, "ledger")).arActionBoundary, 100, "durable idempotency semantics require review rather than a database-presence checkbox");
+});
+test("routing has independent model paths and application-owned validation; dispatch policy requires review", () => {
+  assert.equal(metrics("ai-model-routing", d => node(d, "router").type = "app").arModelChoice, 100, "application-owned routing is valid without a particular gateway component");
+  assert.equal(metrics("ai-model-routing", d => { d.edges = d.edges.filter(e => e.id !== "router-strong"); d.edges.push(edge("small", "strong")); }).arModelChoice, 0);
+  assert.equal(metrics("ai-model-routing", d => remove(d, "strong")).arAlternateModel, 0);
+  assert.equal(metrics("ai-model-routing", d => { d.edges = d.edges.filter(e => e.id !== "api-validation"); d.edges.unshift(edge("api", "validation")); }).arValidationBoundary, 0);
+  assert.equal(metrics("ai-model-routing", d => d.edges.filter(e => e.from === "router").forEach((e, i) => e.params.ratio = i ? 0.2 : 0.8)).arAlternateModel, 100);
+});
+test("disabled paths, disconnected nodes and missing users cannot produce a passing design", () => {
+  for (const id of ids) {
+    assert.ok(Object.values(metrics(id, d => d.edges.forEach(e => e.params.ratio = 0))).some(v => v === 0));
+    assert.ok(Object.values(metrics(id, d => d.edges.forEach(e => e.params.filter = "write"))).some(v => v === 0));
+    assert.ok(Object.values(metrics(id, d => d.nodes = d.nodes.filter(n => n.type !== "client"))).some(v => v === 0));
+  }
+});
+test("check architecture runs without a traffic simulation and invalidates when the diagram changes", () => {
+  const sc = SC.get("ai-faq"), sim = E.create(sc.solution, sc.settings, { scenario: sc });
+  assert.equal(sim.stats().arEvidenceFlow, undefined);
+  sim.reviewArchitecture(); assert.equal(sim.t, 0); assert.equal(sim.stats().arEvidenceFlow, 100);
+  assert.ok(sim.goals().every(g => g.pass)); assert.equal(sim.report().complete, true);
+  sim.setDesign(sc.design); assert.equal(sim.resultsStale, true); assert.ok(sim.goals().every(g => !g.pass));
+  sim.reviewArchitecture(); assert.equal(sim.resultsStale, false); assert.equal(sim.stats().arEvidenceFlow, 0);
+  assert.ok(sim.aiResult.failures.every(f => f.caseId && f.en));
+});
 console.log(`\n${passed} passed`);

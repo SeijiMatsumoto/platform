@@ -457,3 +457,16 @@
 .sdp-comparison { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: .65rem; }
 .sdp-comparison th, .sdp-comparison td { padding: .35rem; border-bottom: 1px solid var(--sdp-line); overflow-wrap: anywhere; text-align: right; }
 .sdp-comparison th:first-child { text-align: left; width: 40%; }
+
+/* Architecture exercises expose responsibilities and call order, not performance knobs. */
+.sdp--architecture .sdp-g-run > :not(.sdp-review-architecture),
+.sdp--architecture .sdp-g-load, .sdp--architecture .sdp-g-rand,
+.sdp--architecture .sdp-tiles, .sdp--architecture .sdp-charts,
+.sdp--architecture .sdp-tab:not([data-tab="report"]) { display: none; }
+.sdp-rationale { display: block; width: 100%; resize: vertical; padding: .5rem; background: var(--sdp-bg); color: var(--sdp-fg); border: 1px solid var(--sdp-line); font: inherit; }
+.sdp-architecture-trace { border-left: 2px solid var(--sdp-line); padding-left: .6rem; margin: .5rem 0; }
+
+.sdp--architecture .sdp-node-sub, .sdp--architecture .sdp-bar-bg, .sdp--architecture .sdp-bar { display: none; }
+
+.sdp-rationale-label { display: block; }
+.sdp-rationale { box-sizing: border-box; }

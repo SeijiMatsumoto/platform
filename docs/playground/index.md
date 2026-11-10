@@ -316,14 +316,18 @@ Write a short *Try it* instruction before each embed: what to change, what to ob
 
 ## AI systems practice
 
-The scenario menu includes eight [AI systems labs](scenarios/index.md#ai-systems), ordered from summarization, retrieval and live tools to ingestion, tenant isolation, durable research, safe refunds and model routing. Each has a failing initial design, acceptance checks, hints and a possible solution.
+The eight [AI architecture exercises](scenarios/index.md#ai-systems) ask you to design summarization, handbook answering, live order support, document ingestion, company knowledge access, research, refunds and model routing.
 
-AI checks run at the end using synthetic labeled fixtures. Their timings, token counts, prices and failures are explicit teaching assumptions, separate from the fluid load charts. They never call a paid model and cannot establish real-world model quality. Read the report for the fixture workload and results.
+Start from a minimal, incomplete design. Identify responsibilities, choose boundaries and draw ordered calls. **Check architecture** inspects call ownership, ordering and specified component-removal probes immediately; it does not require a load run. Select an edge and use **Call earlier** or **Call later** to change sibling call order. Returned results go back to their caller: a retrieval dependency returns passages to the application, which then constructs the generation request.
+
+Acceptance requirements include outcomes that a static diagram cannot prove. Use **Design review** to explain authorization, durable state, retry identities, cancellation, answer quality and trade-offs. Your explanation is saved with the workspace and travels with JSON exports and share links. It is not automatically graded. A green graph review is not a claim that the complete system meets every acceptance requirement.
+
+Performance controls and monthly cost charts are hidden for these exercises. The other scenarios retain the traffic simulator for capacity and performance practice. Hints and reference designs are optional; no separate orchestrator or exact set of components is mandatory.
 
 ## Results and run comparisons
 
-After a run finishes, the Report includes examples of failed AI checks: source IDs, request IDs, lost jobs, duplicate refunds, or exceeded budgets. Editing the design or workload marks completed results as outdated; run again to score the new configuration.
+For traffic scenarios, the Report shows the completed simulation. AI architecture reviews instead explain missing or incorrectly ordered paths and the limits of each graph check. Editing the design or workload marks completed results as outdated; run again to score the new configuration.
 
 The Report compares the current result with the previous completed run, including latency, errors, cost, and scenario goals. The previous workload is shown so you can distinguish design changes from load changes. Comparisons and settings survive reloads; JSON exports and share links still include the current design and settings. Old saved diagrams are restored automatically.
 
-AI traffic coverage is conservative: it follows the strongest active path to each required service, accounting for call ratios and read/write filters. Unserved requests cannot count as successful fixture outcomes. These checks assume the scenario’s single client workload; they do not model arbitrary traffic partitioning across multiple clients or replace the load engine.
+Architecture checks respect disabled edges and request filters. They assume the stated exercise workload and the palette’s component contracts; they do not infer application logic from component names or labels. The review questions cover those semantic responsibilities.

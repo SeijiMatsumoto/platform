@@ -29,3 +29,7 @@ Simulator tests use custom Node.js assertions and `<name>.test.mjs` files under 
 ## Commit & Pull Request Guidelines
 
 Recent commits use descriptive, sentence-style subjects, often prefixed with an edition or topic, such as `2027.1 lab 12: ...`. Follow that pattern. PRs should describe affected pages or behavior, list validation performed, link relevant issues, and include screenshots for visual changes. Deployment runs on pushes to `main`; run checks locally before review.
+
+## AI Architecture Exercises
+
+The eight AI scenarios use `architecture: true`: minimal starting designs, outcome requirements, ordered calls, and ungraded design explanations. `ai.js` checks graph invariants and fault reachability, not model quality or business-rule correctness. Do not introduce solution-shaped checkbox goals or infer authorization/idempotency from a component label. Accept valid alternative responsibility splits. Run `node scripts/playground/test_ai.mjs` and `node scripts/playground/test_url.mjs` for changes to this mode.

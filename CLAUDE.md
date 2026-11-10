@@ -100,6 +100,10 @@ The simulator code is `docs/assets/javascripts/playground/*.js` +
 `assets/stylesheets/playground.css`; engine tests: `node scripts/playground/test_engine.mjs`.
 `SDP.catalogBase` in `catalog.js` sets where "Learn more" points (the edition's component catalog).
 
+### AI architecture practice
+
+The main Playground's eight AI scenarios are architecture exercises (`architecture: true`), not parameter puzzles. They use incomplete canvases, outcome requirements, ordered calls, optional hints/references, and a persisted, ungraded design explanation. `ai.js` checks ownership, call order, boundaries, and component-removal reachability. It must not claim to verify ACL logic, stable operation IDs, answer quality, or routing policy from a diagram. The application can coordinate a fixed workflow without a separate orchestrator. AI exercises hide performance settings and monthly-cost charts; the other scenarios retain the load simulator. Run `test_ai.mjs` and `test_url.mjs` under `scripts/playground/` after changes.
+
 ### Hands-on labs (2027.1): incremental and autonomous
 
 One student repository, `boxoffice/`, grows from lab 0 to lab 13. `docs/2027.1/hands-on/<n>/code/` is

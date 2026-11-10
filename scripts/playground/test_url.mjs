@@ -17,7 +17,10 @@ function element(tag) {
 }
 function setup(href, modes = ["full", "compact"], storage = new Map()) {
   let location = new URL(href), entries = [href], index = 0;
-  const listeners = {}, roots = modes.map(mode => ({ dataset: { mode, scenario: "monolith" }, setAttribute() {} }));
+  const listeners = {}, roots = modes.map(mode => {
+    const classes = new Set();
+    return { dataset: { mode, scenario: "monolith" }, setAttribute() {}, getAttribute() { return null; }, classList: { toggle(name, enabled) { if (enabled) classes.add(name); else classes.delete(name); }, contains(name) { return classes.has(name); } } };
+  });
   const window = { SDP: { catalog: require(dir + "catalog.js"), engine: require(dir + "engine.js"), scenarios: SC, rng: require(dir + "rng.js") }, addEventListener: (name, cb) => listeners[name] = cb };
   const document = { createElement: element, readyState: "loading", addEventListener() {}, querySelectorAll: () => roots, contains: root => roots.includes(root) };
   const history = {
@@ -29,13 +32,13 @@ function setup(href, modes = ["full", "compact"], storage = new Map()) {
   Object.defineProperty(sandbox, "location", { get: () => location });
   vm.runInNewContext(source, sandbox);
   const P = window.SDP.ui.Playground.prototype;
-  const start = P.newSim;
+  const start = P.newSim, toolbar = P.buildToolbar;
   // Only replace drawing/animation; selection, restore, history and sharing stay real.
   for (const name of ["build", "buildToolbar", "newSim", "renderGraph", "fit", "renderSide", "updateLive", "updateTiles", "drawCharts", "showTab"]) P[name] = function () {};
   window.SDP.ui.init();
   return {
     get url() { return location; }, get count() { return entries.length; }, get state() { return history.state; },
-    instances: window.SDP.ui.instances(), storage, start: p => start.call(p),
+    instances: window.SDP.ui.instances(), storage, start: p => start.call(p), renderToolbar: p => { p.toolbar = element("div"); toolbar.call(p); return p.toolbar; },
     back() { if (index) { location = new URL(entries[--index]); listeners.popstate(); } },
     forward() { if (index + 1 < entries.length) { location = new URL(entries[++index]); listeners.popstate(); } }
   };
@@ -136,11 +139,11 @@ test("completed runs persist as immutable snapshots and comparisons survive relo
   finish();
   assert.equal(JSON.stringify(p.previousRun), first);
   const comparison = p.comparison(p.sim.report());
-  assert.equal(comparison.baseline.settings.targetRps, 20);
+  assert.equal(comparison.baseline.settings.targetRps, SC.get("ai-faq").settings.targetRps);
   assert.ok(p.scenario.goals.every(goal => typeof comparison.rows.find(row => row.metric === goal.metric).delta === "number"));
   const restored = setup(url, ["full"], h.storage).instances[0];
   assert.equal(restored.lastRun.settings.targetRps, 333);
-  assert.equal(restored.previousRun.settings.targetRps, 20);
+  assert.equal(restored.previousRun.settings.targetRps, SC.get("ai-faq").settings.targetRps);
   restored.switchScenario("ai-refunds"); assert.equal(restored.lastRun, null);
 });
 test("shared payload wins over saved settings; reset clears both saved versions", () => {
@@ -150,34 +153,65 @@ test("shared payload wins over saved settings; reset clears both saved versions"
   const shared = setup(url + "#sdp=" + payload, ["full"], h.storage).instances[0];
   assert.equal(shared.settings.targetRps, 55);
   shared.switchScenario("ai-faq", true);
-  assert.equal(shared.settings.targetRps, 20);
+  assert.equal(shared.settings.targetRps, SC.get("ai-faq").settings.targetRps);
   assert.equal(shared.design.nodes.length, SC.get("ai-faq").design.nodes.length);
 });
 
-test("reports render failure witnesses, stale warnings, saved runs and comparison tables", () => {
-  const h = setup("https://example.test/platform/playground/?scenario=ai-refunds"), p = h.instances[0];
-  const E = require(dir + "engine.js");
+test("architecture review runs on demand, explains paths, and requires a written design review", () => {
+  const h = setup("https://example.test/platform/playground/?scenario=ai-faq"), p = h.instances[0];
+  p.panels = { report: element("section") }; h.start(p); p.renderReport();
+  assert.match(p.panels.report.textContent, /Check architecture/);
+  p.checkArchitecture(); p.renderReport();
+  assert.match(p.panels.report.textContent, /Review these paths/);
+  assert.match(p.panels.report.textContent, /question-1/);
+  assert.match(p.panels.report.textContent, /not automatically graded/);
+  assert.equal(p.sim.t, 0);
+  p.design = structuredClone(SC.get("ai-faq").solution); p.commit(); p.renderReport();
+  assert.match(p.panels.report.textContent, /diagram changed/);
+  p.checkArchitecture(); p.renderReport();
+  assert.match(p.panels.report.textContent, /design review still required/);
+  assert.doesNotMatch(p.panels.report.textContent, /cost \(illustrative\)/);
+  assert.match(p.reportMarkdown(p.sim.report()), /Design review \(not automatically graded\)/);
+});
+test("design rationale persists, survives share links, and is included in the review export", () => {
+  const url = "https://example.test/platform/playground/?scenario=ai-faq", h = setup(url), p = h.instances[0];
+  p.rationale = "The API owns context assembly. Index updates run separately."; p.persistWorkspace();
+  const restored = setup(url, ["full"], h.storage).instances[0];
+  assert.equal(restored.rationale, p.rationale);
+  const payload = JSON.parse(Buffer.from(p.encoded(), "base64url").toString());
+  assert.equal(payload.r, p.rationale);
+  const shared = setup(url + "#sdp=" + p.encoded(), ["full"]).instances[0];
+  assert.equal(shared.rationale, p.rationale);
+  h.start(p); p.checkArchitecture(); assert.match(p.reportMarkdown(p.sim.report()), /The API owns context assembly/);
+});
+test("call reordering changes the real execution order and is undoable", () => {
+  const h = setup("https://example.test/platform/playground/?scenario=ai-faq"), p = h.instances[0];
+  p.design = structuredClone(SC.get("ai-faq").solution); h.start(p); p.checkArchitecture();
+  assert.equal(p.sim.stats().arEvidenceFlow, 100);
+  p.moveCall("api-model", -1); p.checkArchitecture();
+  assert.equal(p.sim.stats().arEvidenceFlow, 0);
+  assert.equal(p.sim.byId.api.out[0].to.id, "model");
+  p.undo(); p.checkArchitecture(); assert.equal(p.sim.stats().arEvidenceFlow, 100);
+});
+test("non-AI scenarios retain performance reports and run comparisons", () => {
+  const h = setup("https://example.test/platform/playground/?scenario=monolith"), p = h.instances[0], E = require(dir + "engine.js");
   p.panels = { report: element("section") };
   function finish() { p.sim = E.create(p.design, { ...p.settings, duration: 1 }, { scenario: p.scenario }); while (!p.sim.done) p.sim.step(10); p.captureCompletedRun(); }
-  finish(); p.renderReport();
-  assert.match(p.panels.report.textContent, /refund-1/);
-  assert.match(p.panels.report.textContent, /Failure examples/);
-  p.tab = "report";
-  p.design = structuredClone(SC.get("ai-refunds").solution); p.commit();
-  assert.match(p.panels.report.textContent, /Results are outdated/);
-  assert.doesNotMatch(p.panels.report.textContent, /Failure examples/);
-  finish(); p.renderReport();
+  finish(); p.design = structuredClone(SC.get("monolith").solution); p.commit(); finish(); p.renderReport();
   assert.match(p.panels.report.textContent, /Compare with the previous run/);
   assert.match(p.panels.report.textContent, /Metric Previous Current Change/);
-  assert.doesNotMatch(p.panels.report.textContent, /Failure examples/);
-  assert.match(p.reportMarkdown(p.sim.report()), /Comparison with previous run/);
-  const reload = setup("https://example.test/platform/playground/?scenario=ai-refunds", ["full"], h.storage), restored = reload.instances[0];
-  reload.start(restored); restored.panels = { report: element("section") }; restored.renderReport();
-  assert.match(restored.panels.report.textContent, /Last saved completed run/);
-  assert.match(restored.panels.report.textContent, /Compare with the previous run/);
-  restored.switchScenario("ai-refunds", true); reload.start(restored);
-  assert.equal(restored.lastRun, null, "reset must not recapture the outgoing completed run");
-  assert.equal(restored.previousRun, null);
+  assert.match(p.reportMarkdown(p.sim.report()), /cost/);
+  p.switchScenario("monolith", true); h.start(p); assert.equal(p.lastRun, null);
+});
+
+test("architecture mode creates an on-demand toolbar action and releases the mode when switching away", () => {
+  const h = setup("https://example.test/platform/playground/?scenario=ai-faq"), p = h.instances[0];
+  assert.equal(p.root.classList.contains("sdp--architecture"), true);
+  const toolbar = h.renderToolbar(p);
+  assert.match(toolbar.textContent, /Check architecture/);
+  p.switchScenario("monolith");
+  assert.equal(p.root.classList.contains("sdp--architecture"), false);
+  assert.doesNotMatch(h.renderToolbar(p).textContent, /Check architecture/);
 });
 
 console.log(`\n${passed} passed`);

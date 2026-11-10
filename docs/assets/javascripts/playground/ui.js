@@ -129,9 +129,27 @@
     evict: { en: "pods evicted (no room)", pt: "pods despejados (sem espaço)" }
   };
   function aiNote() {
-    return LANG === "pt" ? "Metas de IA usam fixtures sintéticos determinísticos ao fim da execução. Gráficos de carga são um modelo separado; estes resultados não medem qualidade de LLMs reais. Tempos, preços e falhas são hipóteses didáticas." : "AI goals use deterministic synthetic fixtures at the end of the run. Load charts are a separate model; these results do not measure real LLM quality. Times, prices and failures are teaching assumptions.";
+    return "Architecture practice: boxes are responsibilities, not mandatory separate deployments. Arrows are calls, with results returning to their caller. Numbers show call order when a call executes; explain conditional branches in your notes. Graph checks do not grade authorization logic, idempotency, answer quality, or your written explanation.";
   }
   var GOAL_LABEL = {
+    arAsyncAcceptance: ["Acceptance survives a processing restart", ""],
+    arDurableInput: ["Input/job state written before handoff", ""],
+    arRecoveryState: ["Progress state survives outside the processor", ""],
+    arApplicationOwnsModel: ["Application owns generation and dependencies", ""],
+    arIndexWriter: ["Application owns the ordered indexing path", ""],
+    arEvidenceFlow: ["Evidence returns before generation", ""],
+    arSeparateIngestion: ["Index updates are outside the question path", ""],
+    arLiveRead: ["Live facts return before the answer", ""],
+    arIdentityBoundary: ["Identity crosses the application boundary first", ""],
+    arPermissionBoundary: ["Authoritative state consulted before evidence access", ""],
+    arCachedAccess: ["Reused answers cross the same access boundary", ""],
+    arActionCoordination: ["Application receives a proposal before requesting execution", ""],
+    arActionBoundary: ["Business service owns payment execution", ""],
+    arAuthoritativeState: ["Business state consulted before mutation", ""],
+    arModelChoice: ["Application owns distinct model routes", ""],
+    arAlternateModel: ["An alternative route survives either model failing", ""],
+    arValidationBoundary: ["Application validates after model selection", ""],
+
     aiContextErrors: [{"en": "context-limit violations", "pt": "violações de contexto"}, ""],
     aiShortP95: [{"en": "short transcript p95", "pt": "p95 de transcrições curtas"}, "s"],
     aiLongP99: [{"en": "async long-job p99", "pt": "p99 de jobs longos assíncronos"}, "s"],
@@ -365,6 +383,8 @@
     };
     this.god = sc.godMode !== false;
     this.restored = false;
+    this.rationale = "";
+    this.viewingReference = false;
     var design = null;
     /* a share link (#sdp=…) restores into the first full instance; each link only once, so that
        instant navigation back to the page does not overwrite later edits */
@@ -376,6 +396,7 @@
           if (typeof data.s === "string" && SCN.get(data.s)) { this.scenario = sc = SCN.get(data.s); this.god = sc.godMode !== false; }
           if (data.d && typeof data.d === "object" && Array.isArray(data.d.nodes)) design = data.d;
           cleanSettings(data.st, this.settings);
+          this.rationale = typeof data.r === "string" ? data.r.slice(0, 12000) : "";
         }
       } catch (e) { design = null; }
     }
@@ -386,9 +407,10 @@
         if (workspace && workspace.version === 2) {
           if (!design && workspace.design && Array.isArray(workspace.design.nodes)) {
             design = workspace.design; cleanSettings(workspace.settings, this.settings); this.restored = true;
+            this.rationale = typeof workspace.rationale === "string" ? workspace.rationale.slice(0, 12000) : "";
           }
           function validRun(run) { return run && run.settings && run.design && Array.isArray(run.design.nodes) && run.scenario === sc.id && run.report && run.report.complete && !run.report.stale && run.report.stats && Array.isArray(run.report.goals) ? run : null; }
-          this.lastRun = validRun(workspace.lastRun); this.previousRun = validRun(workspace.previousRun);
+          if (!sc.architecture || workspace.practiceRevision === sc.practiceRevision) { this.lastRun = validRun(workspace.lastRun); this.previousRun = validRun(workspace.previousRun); }
         }
       } catch (e) { /* invalid saved data: use defaults or the legacy design */ }
     }
@@ -396,6 +418,8 @@
       var saved = store("sdp:v1:" + sc.id);
       if (saved) { try { design = JSON.parse(saved); this.restored = !!(design && Array.isArray(design.nodes)); if (!this.restored) design = null; } catch (e) { design = null; } }
     }
+    if (this.root.classList) this.root.classList.toggle("sdp--architecture", !!sc.architecture);
+    this.tab = sc.architecture ? "report" : "metrics";
     this.design = ENG.normalizeDesign(design || SCN.clone(sc.design));
     this.undoStack = []; this.redoStack = [];
     this.sel = null;
@@ -415,12 +439,12 @@
 
   P.persistWorkspace = function () {
     if (!this.full) return;
-    store("sdp:v2:" + this.scenario.id, JSON.stringify({ version: 2, design: this.design, settings: this.settings, lastRun: this.lastRun, previousRun: this.previousRun }));
+    store("sdp:v2:" + this.scenario.id, JSON.stringify({ version: 2, practiceRevision: this.scenario.practiceRevision, rationale: this.rationale, design: this.design, settings: this.settings, lastRun: this.lastRun, previousRun: this.previousRun }));
   };
   P.captureCompletedRun = function () {
-    if (!this.sim || !this.sim.done || this.sim.resultsStale || this.capturedSim === this.sim || !this.sim.scenario || this.sim.scenario.id !== this.scenario.id) return;
+    if (!this.sim || !(this.sim.done || this.sim.architectureChecked) || this.sim.resultsStale || this.capturedSim === this.sim || !this.sim.scenario || this.sim.scenario.id !== this.scenario.id) return;
     this.previousRun = this.lastRun;
-    this.lastRun = SCN.clone({ scenario: this.scenario.id, design: this.sim.design, settings: this.sim.settings, report: this.sim.report() });
+    this.lastRun = SCN.clone({ scenario: this.scenario.id, design: this.sim.design, settings: this.sim.settings, report: this.sim.report(), rationale: this.rationale });
     this.capturedSim = this.sim;
     this.persistWorkspace();
   };
@@ -579,6 +603,10 @@
     }
 
     var g1 = group("sdp-g-run");
+    if (this.scenario.architecture) {
+      var check = el("button", { type: "button", class: "sdp-btn-text sdp-review-architecture", text: "Check architecture" });
+      check.addEventListener("click", function () { self.checkArchitecture(); }); g1.appendChild(check);
+    }
     this.playBtn = btn("play", t("play"), function () { self.toggleRun(); }, "sdp-play");
     g1.appendChild(this.playBtn);
     g1.appendChild(btn("step", t("step"), function () { self.stepOnce(); }));
@@ -636,7 +664,7 @@
     }
     this.godBtn = btn("eye", t("god"), function () { self.god = !self.god; self.godBtn.setAttribute("aria-pressed", self.god); self.updateLive(true); self.renderSide(); });
     this.godBtn.setAttribute("aria-pressed", this.god);
-    g4.appendChild(this.godBtn);
+    if (!this.scenario.architecture) g4.appendChild(this.godBtn);
     if (this.full) {
       g4.appendChild(btn("full", t("fullscreen"), function () { self.toggleFullscreen(); }));
       g4.appendChild(btn("help", t("help"), function () { self.toggleHelp(); }));
@@ -778,7 +806,7 @@
     this.panels = {};
     this.tabBtns = {};
     ["metrics", "events", "report", "trace"].forEach(function (k) {
-      var tb = el("button", { type: "button", role: "tab", class: "sdp-tab", "aria-selected": k === self.tab ? "true" : "false", id: self.uid + "-tab-" + k, "aria-controls": self.uid + "-panel-" + k, text: t(k) });
+      var tb = el("button", { type: "button", role: "tab", "data-tab": k, class: "sdp-tab", "aria-selected": k === self.tab ? "true" : "false", id: self.uid + "-tab-" + k, "aria-controls": self.uid + "-panel-" + k, text: t(k) });
       tb.addEventListener("click", function () { self.showTab(k); });
       tabs.appendChild(tb);
       self.tabBtns[k] = tb;
@@ -796,6 +824,7 @@
   };
 
   P.showTab = function (k) {
+    if (this.scenario.architecture) k = "report";
     this.tab = k;
     for (var x in this.panels) { this.panels[x].hidden = x !== k; this.tabBtns[x].setAttribute("aria-selected", x === k ? "true" : "false"); }
     if (k === "report") this.renderReport();
@@ -1016,6 +1045,11 @@
       ee.err.style.opacity = clamp(errShare * 1.5, 0, 1).toFixed(2);
       var lbl = ev.part ? "✕ " + (LANG === "pt" ? "partição" : "partition") : ev.cb === "open" ? "CB " + t("cbOpen") : ev.lag > 1 ? fmtS(ev.lag) : "";
       if (this.isSel("edge", eid) || this.hoverEdge === eid) lbl = fmtNum(ev.rate) + " " + t("rps") + (ev.retryRate > 0.5 ? " (" + fmtNum(ev.retryRate) + " retry)" : "") + (lbl ? " · " + lbl : "");
+      if (this.scenario.architecture) {
+        var raw = this.edge(eid), calls = this.design.edges.filter(function (e) { return e.from === raw.from && CAT.get(self.node(e.to).type).role !== "side"; });
+        var from = this.node(raw.from), type = CAT.get(from.type), choice = type.role === "split" || from.type === "apigw" && calls.filter(function (e) { return self.node(e.to).type === self.node(raw.to).type; }).length > 1;
+        lbl = choice ? "alternative route" : calls.length > 1 ? "call " + (calls.indexOf(raw) + 1) : "call";
+      }
       if (ee.lbl.textContent !== lbl) ee.lbl.textContent = lbl;
       /* dots: density ∝ log(flow) */
       var nd = ev.rate > 0 ? clamp(Math.round(Math.log10(ev.rate + 1) * 2), 1, ee.dots.length) : 0;
@@ -1034,6 +1068,7 @@
 
   /* ─── Metrics tiles, charts ─── */
   P.updateTiles = function () {
+    if (this.scenario.architecture) return;
     var sim = this.sim, now = sim.now || { offered: 0, served: 0, errRate: 0, cost: 0 }, w = sim.windowPercentiles(), st = sim.stats();
     var S = sim.series, i = S.t.length - 1;
     var off = i >= 0 ? S.offered[i] : now.offered, srv = i >= 0 ? S.served[i] : now.served, er = i >= 0 ? S.errRate[i] : now.errRate;
@@ -1066,6 +1101,7 @@
   };
 
   P.drawCharts = function () {
+    if (this.scenario.architecture) return;
     if (!this.charts) return;
     if (this.full && this.tab !== "metrics") return;
     var sim = this.sim, S = sim.series, col = this.colors(), self = this;
@@ -1143,12 +1179,14 @@
   };
 
   P.goalText = function (g) {
+    if (g.metric.indexOf("ar") === 0 && GOAL_LABEL[g.metric]) return tx(GOAL_LABEL[g.metric][0]);
     var gl = GOAL_LABEL[g.metric] || [g.metric, ""], unit = gl[1].indexOf("|") >= 0 ? gl[1].split("|")[LANG === "pt" ? 0 : 1] : gl[1];
     var v = g.value;
     return tx(gl[0]) + " " + g.op.replace("<=", "≤").replace(">=", "≥") + " " + (g.metric === "costPerMonth" ? fmtUsd(v) : g.metric === "aiCostPerTicket" ? dec(v, 4) : fmtNum(v)) + (unit && g.metric !== "costPerMonth" ? " " + unit : "");
   };
   P.goalValue = function (metric, v) {
     if (v === undefined || v === null || isNaN(v)) return "—";
+    if (metric.indexOf("ar") === 0) return v === 100 ? "covered" : "not covered";
     if (metric.indexOf("ai") === 0 && v >= 1e9) return LANG === "pt" ? "indisponível" : "unavailable";
     if (metric === "aiCostPerTicket") return dec(v, 4) + " USD";
     if (metric === "costPerMonth") return fmtUsd(v);
@@ -1166,9 +1204,16 @@
     if (sc.aiKind) ins.appendChild(el("p", { class: "sdp-note", text: aiNote() }));
     if (this.restored) ins.appendChild(el("p", { class: "sdp-note", text: t("restored") }));
     var s = this.settings;
-    ins.appendChild(el("p", { class: "sdp-meta", text: s.profile + " · " + fmtNum(s.targetRps) + " " + t("rps") + " · " + Math.round(s.readRatio * 100) + "% " + (LANG === "pt" ? "leituras" : "reads") + " · seed " + s.seed + " · " + t("chaos").toLowerCase() + " " + tx(CHAOS_LABEL[s.chaos]) }));
+    if (!sc.architecture) ins.appendChild(el("p", { class: "sdp-meta", text: s.profile + " · " + fmtNum(s.targetRps) + " " + t("rps") + " · " + Math.round(s.readRatio * 100) + "% " + (LANG === "pt" ? "leituras" : "reads") + " · seed " + s.seed + " · " + t("chaos").toLowerCase() + " " + tx(CHAOS_LABEL[s.chaos]) }));
+    if (sc.architecture) {
+      ins.appendChild(el("h4", { text: "Acceptance requirements" }));
+      var requirements = el("ul"); sc.requirements.forEach(function (text) { requirements.appendChild(el("li", { text: text })); }); ins.appendChild(requirements);
+      if (this.restored) ins.appendChild(el("p", { class: "sdp-note", text: "Your saved diagram is loaded. Reset the scenario to start with the revised initial design." }));
+      this.renderRationale(ins);
+      if (this.viewingReference) ins.appendChild(el("p", { class: "sdp-note", text: sc.referenceNotes }));
+    }
     if (sc.goals.length) {
-      ins.appendChild(el("h4", { text: t("goals") }));
+      ins.appendChild(el("h4", { text: sc.architecture ? "Automated graph checks" : t("goals") }));
       var ul = el("div", { class: "sdp-goals" });
       this.goalEls = sc.goals.map(function (g) {
         var row = el("div", { class: "sdp-goal" });
@@ -1194,7 +1239,7 @@
         actions.appendChild(el("span", { class: "sdp-confirm", text: t("confirmSolution") }));
         var yes = el("button", { type: "button", class: "sdp-btn-text is-primary", text: t("yes") });
         var no = el("button", { type: "button", class: "sdp-btn-text", text: t("cancel") });
-        yes.addEventListener("click", function () { var before = self.snapshot(); self.design = SCN.clone(sc.solution); self.restored = false; self.commit(before); self.fit(); self.newSim(); self.renderSide(); });
+        yes.addEventListener("click", function () { var before = self.snapshot(); self.design = SCN.clone(sc.solution); self.viewingReference = true; self.restored = false; self.commit(before); self.fit(); self.newSim(); self.renderSide(); });
         no.addEventListener("click", function () { self.renderSide(); });
         actions.appendChild(yes); actions.appendChild(no);
         yes.focus();
@@ -1210,7 +1255,7 @@
 
   P.updateGoals = function () {
     if (!this.scenario.goals.length) return;
-    var res = this.sim.goals(), started = this.sim.t >= this.sim.window[0] + 5, self = this;
+    var res = this.sim.goals(), started = this.scenario.architecture ? this.sim.architectureChecked : this.sim.t >= this.sim.window[0] + 5, self = this;
     if (this.goalEls) res.forEach(function (r, i) {
       var row = self.goalEls[i];
       if (!row) return;
@@ -1225,6 +1270,7 @@
     var gb = this.goalBar, self = this;
     if (!gb) return;
     res = res || this.sim.goals();
+    if (started === undefined) started = this.scenario.architecture ? this.sim.architectureChecked : this.sim.t >= this.sim.window[0] + 5;
     gb.innerHTML = "";
     if (!this.scenario.goals.length) { gb.style.display = "none"; return; }
     gb.style.display = "";
@@ -1314,11 +1360,11 @@
     this.liveBox = el("div", { class: "sdp-live" });
     ins.appendChild(this.liveBox);
     this.updateInspectorLive();
-    if (c.params.length) {
+    if (c.params.length && !this.scenario.architecture) {
       ins.appendChild(el("h4", { text: t("params") }));
       var eff = CAT.params(n);
       c.params.forEach(function (pid) {
-        if (pid.indexOf("ai") === 0 && (!self.scenario.aiKind || self.scenario.aiControls.indexOf(pid) < 0)) return;
+        if (pid.indexOf("ai") === 0 && (!self.scenario.aiKind || (self.scenario.aiControls || []).indexOf(pid) < 0)) return;
         var def = CAT.PARAMS[pid];
         if (!def) return;
         var v = eff[pid];
@@ -1339,6 +1385,7 @@
   };
 
   P.updateInspectorLive = function () {
+    if (this.scenario.architecture) { if (this.liveBox) this.liveBox.hidden = true; return; }
     if (!this.liveBox || !this.sel) return;
     var sim = this.sim, rows = [];
     if (this.sel.kind === "node") {
@@ -1419,6 +1466,17 @@
       if (this.full) { var del0 = el("button", { type: "button", class: "sdp-btn-text is-danger", text: t("delete") }); del0.addEventListener("click", function () { self.deleteSel(); }); ins.appendChild(del0); }
       return;
     }
+    if (this.scenario.architecture) {
+      ins.appendChild(el("p", { class: "sdp-note", text: "Arrows are calls. Each result returns to its caller. Calls from the same application service use their numbered order when executed. Explain conditional calls in your design notes; exclusive router branches are alternatives." }));
+      var siblings = this.design.edges.filter(function (x) { return x.from === e.from && CAT.get(self.node(x.to).type).role !== "side"; });
+      if (siblings.length > 1) [-1, 1].forEach(function (direction) {
+        var button = el("button", { type: "button", class: "sdp-btn-text", text: direction < 0 ? "Call earlier" : "Call later" });
+        var index = siblings.indexOf(e); button.disabled = index + direction < 0 || index + direction >= siblings.length;
+        button.addEventListener("click", function () { self.moveCall(e.id, direction); }); ins.appendChild(button);
+      });
+      var remove = el("button", { type: "button", class: "sdp-btn-text is-danger", text: t("delete") });
+      remove.addEventListener("click", function () { self.deleteSel(); }); ins.appendChild(remove); return;
+    }
     var simE = null;
     this.sim.flowEdges.forEach(function (x) { if (x.id === e.id) simE = x; });
     var eff = simE ? simE.p : CAT.merge(CAT.EDGE_DEFAULTS, e.params || {});
@@ -1442,6 +1500,12 @@
     }
   };
 
+  P.moveCall = function (id, direction) {
+    var self = this, edge = this.edge(id), siblings = this.design.edges.filter(function (e) { return e.from === edge.from && CAT.get(self.node(e.to).type).role !== "side"; });
+    var i = siblings.indexOf(edge), other = siblings[i + direction]; if (!other) return;
+    var before = this.snapshot(), a = this.design.edges.indexOf(edge), b = this.design.edges.indexOf(other);
+    this.design.edges[a] = other; this.design.edges[b] = edge; this.commit(before, true);
+  };
   P.renderFrameInspector = function (ins) {
     var f = this.frame(this.sel.id), c = CAT.get(f.type), self = this;
     var head = el("div", { class: "sdp-ins-head sdp-cat-" + c.cat });
@@ -1540,7 +1604,39 @@
 
   P.reportData = function () { return this.sim.report(); };
 
+  P.renderRationale = function (parent) {
+    var self = this;
+    var section = collapsible("sdp-design-review", "Design review (not automatically graded)", false);
+    var list = el("ol"); this.scenario.reviewQuestions.forEach(function (q) { list.appendChild(el("li", { text: q })); }); section.body.appendChild(list);
+    var label = el("label", { class: "sdp-rationale-label", text: "Explain your design, trade-offs and failure handling" });
+    var input = el("textarea", { class: "sdp-rationale", rows: 8, maxlength: 12000, "aria-label": "Design explanation" });
+    input.value = this.rationale || "";
+    input.addEventListener("input", function () { self.rationale = input.value.slice(0, 12000); self.persistWorkspace(); });
+    label.appendChild(input); section.body.appendChild(label); parent.appendChild(section.root);
+  };
+  P.renderArchitectureReport = function () {
+    if (!this.panels || !this.panels.report) return;
+    var p = this.panels.report, self = this; p.innerHTML = "";
+    p.appendChild(el("p", { class: "sdp-note", text: aiNote() }));
+    if (!this.sim.architectureChecked || this.sim.resultsStale) {
+      p.appendChild(el("p", { role: "status", text: this.sim.resultsStale ? "The diagram changed. Check architecture again." : "Build your design, then choose Check architecture. Review questions are available below; nothing is graded from your explanation." }));
+      this.renderRationale(p); return;
+    }
+    var r = this.sim.report(), all = r.goals.every(function (g) { return g.pass; });
+    p.appendChild(el("h4", { text: all ? "Graph checks passed — design review still required" : "Review these paths" }));
+    var list = el("ul");
+    r.goals.forEach(function (g) { list.appendChild(el("li", { text: self.goalText(g.goal) + ": " + self.goalValue(g.goal.metric, g.value) })); }); p.appendChild(list);
+    if (r.ai) r.ai.traces.forEach(function (trace) {
+      var box = el("div", { class: "sdp-architecture-trace" });
+      box.appendChild(el("p", { text: trace.caseId + " · " + (trace.pass ? "covered" : "not covered") + ": " + trace.en }));
+      if (trace.route.length) box.appendChild(el("p", { class: "sdp-meta", text: trace.route.join(" → ") })); p.appendChild(box);
+    });
+    this.renderRationale(p);
+    var copy = el("button", { type: "button", class: "sdp-btn-text", text: "Copy architecture review" });
+    copy.addEventListener("click", function () { copyText(self.reportMarkdown(r), function (ok) { self.say(ok ? t("copied") : t("copyFail")); }); }); p.appendChild(copy);
+  };
   P.renderReport = function () {
+    if (this.scenario.architecture && this.full) { this.renderArchitectureReport(); return; }
     if (!this.full) return;
     var p = this.panels.report, sim = this.sim, self = this;
     p.innerHTML = "";
@@ -1622,6 +1718,14 @@
   };
 
   P.reportMarkdown = function (r) {
+    if (this.scenario.architecture) {
+      var lines = ["## Architecture review: " + tx(this.scenario.title), "", aiNote(), "", "### Automated graph checks"];
+      var self = this;
+      r.goals.forEach(function (g) { lines.push("- " + self.goalText(g.goal) + ": " + (r.stale ? "check again" : self.goalValue(g.goal.metric, g.value))); });
+      if (r.ai) r.ai.traces.forEach(function (trace) { lines.push("- " + trace.caseId + ": " + trace.en + (trace.route.length ? " Path: " + trace.route.join(" → ") : "")); });
+      lines.push("", "### Design review (not automatically graded)"); this.scenario.reviewQuestions.forEach(function (q) { lines.push("- " + q); });
+      lines.push("", "### My explanation", this.rationale || "Not provided.", "", "```mermaid", ENG.toMermaid(this.design), "```"); return lines.join("\n");
+    }
     var self = this, st = r.stats, lines = [];
     lines.push("## " + t("reportOf") + ": " + tx(this.scenario.title));
     if (r.stale) lines.push("", staleNote());
@@ -1681,7 +1785,14 @@
   };
 
   /* ─── Simulation control ─── */
+  P.checkArchitecture = function () {
+    this.sim.reviewArchitecture();
+    this.captureCompletedRun();
+    this.updateGoals(); this.updateLive(true);
+    if (this.full) this.showTab("report"); else this.renderGoalBar();
+  };
   P.toggleRun = function () {
+    if (this.scenario.architecture) { this.checkArchitecture(); return; }
     if (this.sim.done) this.newSim();
     this.running = !this.running;
     this.last = 0;
@@ -1695,6 +1806,7 @@
     this.playBtn.classList.toggle("is-on", this.running);
   };
   P.stepOnce = function () {
+    if (this.scenario.architecture) { this.checkArchitecture(); return; }
     if (this.sim.done) this.newSim();
     this.sim.step(10);
     this.afterTicks(true);
@@ -1996,7 +2108,7 @@
   P.toggleHelp = function () {
     if (this.helpEl) { this.hideHelp(); return; }
     var h = el("div", { class: "sdp-help", role: "dialog", "aria-label": t("shortcuts") }), self = this;
-    var rows = [["Space", t("runKey")], ["S", t("stepKey")], ["C", t("connect")], ["D", t("dupSel")], ["Del / ⌫", t("delSel")], ["Ctrl/⌘ Z · Shift Ctrl/⌘ Z", t("undoKey")], ["F", t("fitKey")], ["+ / -", t("zoomIn") + " / " + t("zoomOut")], ["Tab · Enter", t("nodeKey")], ["Esc", t("escKey")], ["?", t("helpKey")]];
+    var rows = [["Space", this.scenario.architecture ? "Check architecture" : t("runKey")], ["S", this.scenario.architecture ? "Check architecture" : t("stepKey")], ["C", t("connect")], ["D", t("dupSel")], ["Del / ⌫", t("delSel")], ["Ctrl/⌘ Z · Shift Ctrl/⌘ Z", t("undoKey")], ["F", t("fitKey")], ["+ / -", t("zoomIn") + " / " + t("zoomOut")], ["Tab · Enter", t("nodeKey")], ["Esc", t("escKey")], ["?", t("helpKey")]];
     h.innerHTML = "<h4>" + esc(t("shortcuts")) + "</h4><dl>" + rows.map(function (r) { return "<dt><kbd>" + esc(r[0]) + "</kbd></dt><dd>" + esc(r[1]) + "</dd>"; }).join("") + '</dl><p class="sdp-meta">' + esc(t("panZoom")) + "</p>";
     var c = el("button", { type: "button", class: "sdp-btn-text", text: t("close") });
     c.addEventListener("click", function () { self.hideHelp(); });
@@ -2094,7 +2206,7 @@
   };
 
   P.exportJson = function () {
-    var data = { scenario: this.scenario.id, settings: this.settings, design: this.design };
+    var data = { scenario: this.scenario.id, settings: this.settings, design: this.design, rationale: this.rationale };
     var blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
     var a = el("a", { href: URL.createObjectURL(blob), download: "sdp-" + this.scenario.id + ".json" });
     document.body.appendChild(a); a.click(); a.remove();
@@ -2111,6 +2223,7 @@
         var before = self.snapshot();
         self.design = clean;
         cleanSettings(data.settings, self.settings);
+        self.rationale = typeof data.rationale === "string" ? data.rationale.slice(0, 12000) : "";
         self.buildToolbar();
         self.commit(before);
         self.newSim();
@@ -2121,7 +2234,7 @@
     if (file.size > 5e6) { self.say(t("badFile")); return; }
     rd.readAsText(file);
   };
-  P.encoded = function () { return b64e(JSON.stringify({ s: this.scenario.id, d: this.design, st: this.settings })); };
+  P.encoded = function () { return b64e(JSON.stringify({ s: this.scenario.id, d: this.design, st: this.settings, r: this.rationale })); };
   P.share = function () {
     this.syncScenarioUrl(false, false);
     var self = this, url = new URL(location.href);
